@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+DEPLOY_DIR=/var/www/mtg-tracker
+
+GIT_WORK_TREE=$DEPLOY_DIR git checkout -f main
+
+echo "==> Backend: npm install"
+cd $DEPLOY_DIR/backend
+npm ci --omit=dev
+
+echo "==> Backend: pm2 restart"
+pm2 describe mtg-tracker-api > /dev/null 2>&1 \
+  && pm2 restart mtg-tracker-api \
+  || pm2 start src/app.js --name mtg-tracker-api --env production
+pm2 save
+
+echo "==> Frontend: npm install & build"
+cd $DEPLOY_DIR/frontend
+npm ci
+npm run build
+
+echo "==> Deploy complete!"

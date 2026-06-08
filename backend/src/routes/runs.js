@@ -1,0 +1,27 @@
+const { Router } = require("express");
+const { createRun, getRunsByEvent } = require("../notion");
+
+const router = Router();
+
+router.get("/:eventId", async (req, res) => {
+  try {
+    const runs = await getRunsByEvent(req.params.eventId);
+    res.json(runs);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/", async (req, res) => {
+  const { eventPageId, runIndex, wins, prizeType, prizeGem, prizeBoxCount } = req.body;
+  if (!eventPageId || runIndex == null || wins == null || !prizeType)
+    return res.status(400).json({ error: "eventPageId, runIndex, wins, prizeType は必須です" });
+  try {
+    const run = await createRun({ eventPageId, runIndex, wins, prizeType, prizeGem, prizeBoxCount });
+    res.status(201).json(run);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+module.exports = router;

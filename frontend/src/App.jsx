@@ -497,11 +497,16 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
           </div>
         )}
       </div>
-      <button className="btn-primary" disabled={!canSave}
-        onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
-          boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
-        Runを保存
-      </button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn" style={{ flex: 1, padding: "14px", fontSize: 14 }} onClick={onBack}>
+          キャンセル
+        </button>
+        <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave}
+          onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
+            boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
+          Runを保存
+        </button>
+      </div>
     </div>
   );
 }

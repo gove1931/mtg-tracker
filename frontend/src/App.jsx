@@ -414,6 +414,15 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
 
   const handlePrizeType = (id) => { setPrizeType(id); setPrizeGem(""); setPrizeBoxCount(null); };
 
+  const handleWins = (n) => {
+    setWins(n);
+    if (n < 7) {
+      setLosses(maxLosses || 3);
+    } else {
+      setLosses(null);
+    }
+  };
+
   return (
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
@@ -425,20 +434,22 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
         <div className="wins-grid">
           {[0,1,2,3,4,5,6,7].map(n => (
             <button key={n} className={`win-btn ${wins === n ? "win-btn-selected" : ""}`}
-              onClick={() => setWins(n)}>{n}</button>
+              onClick={() => handleWins(n)}>{n}</button>
           ))}
         </div>
       </div>
-      <div className="card">
-        <div className="section-label">敗北数</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {Array.from({ length: (maxLosses || 3) + 1 }, (_, n) => (
-            <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
-              style={{ flex: 1 }}
-              onClick={() => setLosses(n)}>{n}</button>
-          ))}
+      {wins === 7 && (
+        <div className="card">
+          <div className="section-label">敗北数（7勝時）</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {Array.from({ length: maxLosses || 3 }, (_, n) => (
+              <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
+                style={{ flex: 1 }}
+                onClick={() => setLosses(n)}>{n}</button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       <div className="card">
         <div className="section-label">プライズ</div>
         <div className="prize-grid">

@@ -567,7 +567,12 @@ export default function App() {
     setIsSyncing(true);
     try {
       const totalWins = activeEvent.runs.reduce((s, r) => s + r.wins, 0);
-      const totalGemPrize = activeEvent.runs.reduce((s, r) => r.prizeType === "ジェム" ? s + r.prizeGem : s, 0);
+      const totalGemPrize = activeEvent.runs.reduce((s, r) => {
+        if (r.prizeType === "ジェム") return s + r.prizeGem;
+        if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
+          return s + (BOX_GEM_VALUE[r.prizeType] * (r.prizeBoxCount || 1));
+        return s;
+      }, 0);
       const gemBalance = totalGemPrize - activeEvent.gemCost * activeEvent.runs.length;
       const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date);
       if (eventPageId) {
@@ -587,7 +592,7 @@ export default function App() {
         <div className="bg-glow" />
         <div className="header">
           <div className="header-title">MTG Arena Tracker</div>
-          <div className="header-sub">戦績管理 — TEST MODE</div>
+          <div className="header-sub">戦績管理</div>
         </div>
         {activeEvent && screen !== "setup" && (
           <div className="status-bar">

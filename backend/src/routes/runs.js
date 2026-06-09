@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { createRun, getRunsByEvent } = require("../notion");
+const { createRun, getRunsByEvent } = require("../db");
 
 const router = Router();
 

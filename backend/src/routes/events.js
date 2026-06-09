@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { createEvent, getEvents, updateEvent } = require("../db");
+const { createEvent, getEvents, updateEvent, deleteEvent } = require("../db");
 
 const router = Router();
 
@@ -28,6 +28,15 @@ router.put("/:id", async (req, res) => {
   const { totalRuns, totalWins, totalLosses, gemBalance } = req.body;
   try {
     await updateEvent(req.params.id, { totalRuns, totalWins, totalLosses, gemBalance });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    await deleteEvent(req.params.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

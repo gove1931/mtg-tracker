@@ -34,6 +34,10 @@ async function deleteRun(id) {
   await pool.query("DELETE FROM runs WHERE id=$1", [id]);
 }
 
+async function deleteEvent(id) {
+  await pool.query("DELETE FROM events WHERE id=$1", [id]);
+}
+
 // ===== 戦績 =====
 
 async function createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount }) {
@@ -82,4 +86,4 @@ function rowToRun(r) {
   };
 }
 
-module.exports = { createEvent, getEvents, updateEvent, createRun, getRunsByEvent, deleteRun };
+module.exports = { createEvent, getEvents, updateEvent, createRun, getRunsByEvent, deleteRun, deleteEvent };

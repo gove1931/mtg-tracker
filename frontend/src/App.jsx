@@ -57,6 +57,10 @@ async function deleteRunFromDB(runId) {
   await fetch(`${API_URL}/api/runs/${runId}`, { method: "DELETE" });
 }
 
+async function deleteEventFromDB(eventId) {
+  await fetch(`${API_URL}/api/events/${eventId}`, { method: "DELETE" });
+}
+
 // ===== HomeScreen =====
 function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
   return (
@@ -170,6 +174,8 @@ function HistoryScreen({ onBack, onEditEvent }) {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [openMonths, setOpenMonths] = useState(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -199,7 +205,19 @@ function HistoryScreen({ onBack, onEditEvent }) {
     finally { setRunsLoading(false); }
   };
 
-  const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); fetchRuns(ev.id); };
+  const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); setConfirmDelete(false); fetchRuns(ev.id); };
+
+  const handleDeleteEvent = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteEventFromDB(selectedEvent.id);
+      setEvents(prev => prev.filter(e => e.id !== selectedEvent.id));
+      setSelectedEvent(null);
+      setConfirmDelete(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const toggleMonth = (key) => {
     setOpenMonths(prev => {
@@ -218,10 +236,26 @@ function HistoryScreen({ onBack, onEditEvent }) {
         <div className="section-label">{selectedEvent.type}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>{selectedEvent.name}</div>
-          <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}
-            onClick={() => onEditEvent(selectedEvent, runs)}>編集</button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}
+              onClick={() => onEditEvent(selectedEvent, runs)}>編集</button>
+            <button className="btn" style={{ padding: "6px 12px", fontSize: 12, color: "#ff8080", borderColor: "rgba(255,128,128,0.3)" }}
+              onClick={() => setConfirmDelete(true)}>削除</button>
+          </div>
         </div>
         <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>{selectedEvent.date}</div>
+        {confirmDelete && (
+          <div style={{ marginBottom: 16, padding: "12px 14px", background: "rgba(255,128,128,0.08)", border: "1px solid rgba(255,128,128,0.3)", borderRadius: 10 }}>
+            <div style={{ fontSize: 13, color: "#ff8080", marginBottom: 10 }}>このイベントを削除しますか？（Runデータも全て削除されます）</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" style={{ flex: 1, fontSize: 13 }} onClick={() => setConfirmDelete(false)}>キャンセル</button>
+              <button className="btn" style={{ flex: 1, fontSize: 13, color: "#ff8080", borderColor: "rgba(255,128,128,0.4)" }}
+                disabled={isDeleting} onClick={handleDeleteEvent}>
+                {isDeleting ? "削除中..." : "削除する"}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalRuns || 0}</div><div className="summary-key">Runs</div></div>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalWins || 0}</div><div className="summary-key">総勝利</div></div>

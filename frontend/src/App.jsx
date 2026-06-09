@@ -117,12 +117,28 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
 }
 
 // ===== HistoryScreen =====
+function groupByMonth(events) {
+  const map = {};
+  for (const ev of events) {
+    const key = (ev.date || "").slice(0, 7);
+    if (!map[key]) map[key] = [];
+    map[key].push(ev);
+  }
+  return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function monthLabel(key) {
+  const [y, m] = key.split("-");
+  return `${y}年${parseInt(m)}月`;
+}
+
 function HistoryScreen({ onBack }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [openMonths, setOpenMonths] = useState(new Set());
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -131,7 +147,13 @@ function HistoryScreen({ onBack }) {
     try {
       const res = await fetch(`${API_URL}/api/events`);
       const data = await res.json();
-      setEvents(data.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+      const sorted = data.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      setEvents(sorted);
+      // 最新月だけ最初から開く
+      if (sorted.length > 0) {
+        const latestKey = (sorted[0].date || "").slice(0, 7);
+        setOpenMonths(new Set([latestKey]));
+      }
     } catch (e) { setEvents([]); }
     finally { setLoading(false); }
   };
@@ -147,6 +169,14 @@ function HistoryScreen({ onBack }) {
   };
 
   const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); fetchRuns(ev.id); };
+
+  const toggleMonth = (key) => {
+    setOpenMonths(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
 
   if (selectedEvent) {
     const balance = selectedEvent.gemBalance || 0;
@@ -195,33 +225,64 @@ function HistoryScreen({ onBack }) {
     );
   }
 
+  const groups = groupByMonth(events);
+
   return (
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
       <div className="section-label">過去のイベント</div>
       {loading ? (
         <div style={{ color: "#ccc", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
-      ) : events.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div style={{ color: "#ccc", fontSize: 13, textAlign: "center", padding: "20px 0" }}>履歴がありません</div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {events.map((ev) => {
-            const bal = ev.gemBalance || 0;
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {groups.map(([key, monthEvents]) => {
+            const isOpen = openMonths.has(key);
+            const monthBalance = monthEvents.reduce((s, ev) => s + (ev.gemBalance || 0), 0);
             return (
-              <button key={ev.id} className="btn"
-                style={{ width: "100%", textAlign: "left", padding: "14px 16px" }}
-                onClick={() => handleSelectEvent(ev)}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: "#7ecfff", marginBottom: 2 }}>{ev.type}</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>{ev.name}</div>
-                    <div style={{ fontSize: 11, color: "#ccc", marginTop: 2 }}>{ev.date} — {ev.totalRuns}Run {ev.totalWins}勝</div>
+              <div key={key}>
+                {/* 月ヘッダー */}
+                <button onClick={() => toggleMonth(key)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    background: "rgba(126,207,255,0.06)", border: "1px solid rgba(126,207,255,0.18)",
+                    borderRadius: isOpen ? "10px 10px 0 0" : 10, padding: "12px 16px", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 10, color: "#7ecfff" }}>{isOpen ? "▼" : "▶"}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#e0e0e0" }}>{monthLabel(key)}</span>
+                    <span style={{ fontSize: 11, color: "#bbb" }}>{monthEvents.length}件</span>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: bal >= 0 ? "#68d9a4" : "#ff8080" }}>
-                    {bal >= 0 ? "+" : ""}{bal.toLocaleString()}G
+                  <span style={{ fontSize: 13, fontWeight: 600, color: monthBalance >= 0 ? "#68d9a4" : "#ff8080" }}>
+                    {monthBalance >= 0 ? "+" : ""}{monthBalance.toLocaleString()}G
+                  </span>
+                </button>
+                {/* イベント一覧 */}
+                {isOpen && (
+                  <div style={{ border: "1px solid rgba(126,207,255,0.18)", borderTop: "none",
+                    borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                    {monthEvents.map((ev, i) => {
+                      const bal = ev.gemBalance || 0;
+                      return (
+                        <button key={ev.id}
+                          style={{ width: "100%", textAlign: "left", padding: "12px 16px", background: "rgba(255,255,255,0.02)",
+                            border: "none", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none", cursor: "pointer" }}
+                          onClick={() => handleSelectEvent(ev)}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: "#7ecfff", marginBottom: 2 }}>{ev.type}</div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{ev.date}</div>
+                              <div style={{ fontSize: 11, color: "#bbb", marginTop: 1 }}>{ev.totalRuns}Run {ev.totalWins}勝</div>
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: bal >= 0 ? "#68d9a4" : "#ff8080" }}>
+                              {bal >= 0 ? "+" : ""}{bal.toLocaleString()}G
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-              </button>
+                )}
+              </div>
             );
           })}
         </div>

@@ -5,9 +5,9 @@ import { useState, useEffect, useCallback } from "react";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 const EVENT_TYPES = [
-  { id: "アリーナダイレクト", label: "アリーナダイレクト", short: "AD" },
-  { id: "プレイイン", label: "プレイイン", short: "PI" },
-  { id: "リミテッドチャンピオンシップ予選", label: "リミテッドチャンピオンシップ予選", short: "LC予選" },
+  { id: "アリーナダイレクト", label: "アリーナダイレクト", english: "Arena Direct" },
+  { id: "プレイイン", label: "プレイイン", english: "Play-In" },
+  { id: "リミテッドチャンピオンシップ予選", label: "リミテッドチャンピオンシップ予選", english: "Limited Championship Qualifier" },
 ];
 
 // PB BOX=20000G/箱、CB BOX=60000G/箱（20000G=15000円換算）
@@ -22,11 +22,11 @@ const PRIZE_TYPES = [
 ];
 
 // ===== API関数 =====
-async function createEventInNotion(eventType, gemCost, date) {
+async function createEventInNotion(eventType, gemCost, date, maxLosses) {
   const res = await fetch(`${API_URL}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventType, gemCost, date }),
+    body: JSON.stringify({ eventType, gemCost, date, maxLosses }),
   });
   const data = await res.json();
   return data.id || null;
@@ -38,7 +38,8 @@ async function createRunInNotion(run, eventPageId, runIndex) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       eventPageId, runIndex,
-      wins: run.wins, prizeType: run.prizeType,
+      wins: run.wins, losses: run.losses || 0,
+      prizeType: run.prizeType,
       prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
     }),
   });
@@ -87,6 +88,9 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
 
 // ===== RecordMenuScreen =====
 function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [customName, setCustomName] = useState("");
+
   return (
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
@@ -108,10 +112,33 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
         <button key={et.id} className="btn"
           style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px" }}
           onClick={() => onNewEvent(et.id)}>
-          <span style={{ fontSize: 11, color: "#7ecfff", display: "block", marginBottom: 2, letterSpacing: "0.08em" }}>{et.short}</span>
-          {et.label}
+          <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
+          <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span>
         </button>
       ))}
+      {!showCustom ? (
+        <button className="btn"
+          style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px" }}
+          onClick={() => setShowCustom(true)}>
+          <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>Other</span>
+          <span style={{ fontSize: 11, color: "#bbb" }}>その他</span>
+        </button>
+      ) : (
+        <div className="card" style={{ marginBottom: 8 }}>
+          <div className="section-label">イベント名を入力</div>
+          <input className="input-field" type="text" placeholder="例: スペシャルイベント"
+            value={customName} onChange={e => setCustomName(e.target.value)} autoFocus />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn" style={{ flex: 1 }}
+              onClick={() => { setShowCustom(false); setCustomName(""); }}>キャンセル</button>
+            <button className="btn-primary" style={{ flex: 2, padding: "10px" }}
+              disabled={!customName.trim()}
+              onClick={() => { if (customName.trim()) onNewEvent(customName.trim()); }}>
+              作成
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -187,7 +214,7 @@ function HistoryScreen({ onBack }) {
         <div className="section-label">{selectedEvent.type}</div>
         <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{selectedEvent.name}</div>
         <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>{selectedEvent.date}</div>
-        <div className="event-summary">
+        <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalRuns || 0}</div><div className="summary-key">Runs</div></div>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalWins || 0}</div><div className="summary-key">総勝利</div></div>
           <div className="summary-card">
@@ -195,6 +222,14 @@ function HistoryScreen({ onBack }) {
               {balance >= 0 ? "+" : ""}{balance.toLocaleString()}
             </div>
             <div className="summary-key">ジェム収支</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-val" style={{ color: "#ffcb6b" }}>
+              {runs.length > 0 && (runs.reduce((s, r) => s + r.wins, 0) + runs.reduce((s, r) => s + (r.losses || 0), 0)) > 0
+                ? `${Math.round(runs.reduce((s, r) => s + r.wins, 0) / (runs.reduce((s, r) => s + r.wins, 0) + runs.reduce((s, r) => s + (r.losses || 0), 0)) * 100)}%`
+                : "—"}
+            </div>
+            <div className="summary-key">勝率</div>
           </div>
         </div>
         <div className="section-label">Run履歴</div>
@@ -213,7 +248,7 @@ function HistoryScreen({ onBack }) {
                   return (
                     <div key={i} className="run-item">
                       <span className="run-num">#{i + 1}</span>
-                      <span className="run-wins">{r.wins}勝</span>
+                      <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
                       <span className="run-prize">{prize?.icon} {prizeText}</span>
                     </div>
                   );
@@ -294,6 +329,7 @@ function HistoryScreen({ onBack }) {
 // ===== EventSetupScreen =====
 function EventSetupScreen({ eventType, onStart, onBack }) {
   const [gemCost, setGemCost] = useState("");
+  const [maxLosses, setMaxLosses] = useState(3);
   const [boxType, setBoxType] = useState(null);
   const [boxName, setBoxName] = useState("");
   const presets = [4000, 5000, 6000, 8000];
@@ -311,6 +347,16 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
           {presets.map(p => (
             <button key={p} className={`btn ${gemCost == p ? "btn-selected" : ""}`}
               onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <div className="section-label">何敗で終了か</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[1, 2, 3].map(n => (
+            <button key={n} className={`btn ${maxLosses === n ? "btn-selected" : ""}`}
+              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
+              onClick={() => setMaxLosses(n)}>{n}敗</button>
           ))}
         </div>
       </div>
@@ -340,7 +386,7 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
       </div>
       <button className="btn-primary mt-16"
         disabled={!gemCost || isNaN(Number(gemCost))}
-        onClick={() => onStart(Number(gemCost), boxType, boxName.trim())}>
+        onClick={() => onStart(Number(gemCost), boxType, boxName.trim(), maxLosses)}>
         イベント開始
       </button>
     </div>
@@ -348,8 +394,9 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName }) {
+function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses }) {
   const [wins, setWins] = useState(null);
+  const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
   const [prizeGem, setPrizeGem] = useState("");
   const [prizeBoxCount, setPrizeBoxCount] = useState(null);
@@ -361,7 +408,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName }) {
     return true;
   });
 
-  const canSave = wins !== null && prizeType !== null &&
+  const canSave = wins !== null && losses !== null && prizeType !== null &&
     (prizeType !== "ジェム" || prizeGem) &&
     (!(prizeType === "PB_BOX" || prizeType === "CB_BOX") || prizeBoxCount !== null);
 
@@ -379,6 +426,16 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName }) {
           {[0,1,2,3,4,5,6,7].map(n => (
             <button key={n} className={`win-btn ${wins === n ? "win-btn-selected" : ""}`}
               onClick={() => setWins(n)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <div className="section-label">敗北数</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {Array.from({ length: (maxLosses || 3) + 1 }, (_, n) => (
+            <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
+              style={{ flex: 1 }}
+              onClick={() => setLosses(n)}>{n}</button>
           ))}
         </div>
       </div>
@@ -430,7 +487,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName }) {
         )}
       </div>
       <button className="btn-primary" disabled={!canSave}
-        onClick={() => onSave({ wins, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
+        onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
           boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
         Runを保存
       </button>
@@ -441,6 +498,10 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName }) {
 // ===== EventSummaryScreen =====
 function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
   const totalWins = event.runs.reduce((s, r) => s + r.wins, 0);
+  const totalLosses = event.runs.reduce((s, r) => s + (r.losses || 0), 0);
+  const winRate = (totalWins + totalLosses) > 0
+    ? Math.round(totalWins / (totalWins + totalLosses) * 100)
+    : null;
   const totalGemPrize = event.runs.reduce((s, r) => {
     if (r.prizeType === "ジェム") return s + r.prizeGem;
     if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
@@ -458,7 +519,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{event.type}</div>
       <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
 
-      <div className="event-summary">
+      <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <div className="summary-card"><div className="summary-val">{event.runs.length}</div><div className="summary-key">Runs</div></div>
         <div className="summary-card"><div className="summary-val">{totalWins}</div><div className="summary-key">総勝利</div></div>
         <div className="summary-card">
@@ -466,6 +527,12 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
             {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
           </div>
           <div className="summary-key">ジェム収支</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-val" style={{ color: "#ffcb6b" }}>
+            {winRate !== null ? `${winRate}%` : "—"}
+          </div>
+          <div className="summary-key">勝率</div>
         </div>
       </div>
 
@@ -511,7 +578,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
           return (
             <div key={i} className="run-item">
               <span className="run-num">#{i + 1}</span>
-              <span className="run-wins">{r.wins}勝</span>
+              <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
               <span className="run-prize">{prize?.icon} {prizeText}</span>
             </div>
           );
@@ -589,7 +656,7 @@ const styles = `
   .run-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   .run-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; font-size: 13px; }
   .run-num { font-size: 10px; color: #aaa; width: 24px; flex-shrink: 0; }
-  .run-wins { font-weight: 600; color: #e0e0e0; width: 32px; flex-shrink: 0; }
+  .run-wins { font-weight: 600; color: #e0e0e0; width: 52px; flex-shrink: 0; }
   .run-prize { color: #ddd; font-size: 12px; flex: 1; }
 
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(104,217,164,0.15); border: 1px solid rgba(104,217,164,0.4); border-radius: 10px; color: #68d9a4; font-size: 14px; padding: 12px 24px; white-space: nowrap; z-index: 999; }
@@ -611,12 +678,13 @@ export default function App() {
 
   const handleNewEvent = (type) => { setSelectedEventType(type); setScreen("setup"); };
 
-  const handleEventStart = (gemCost, boxType, boxName) => {
+  const handleEventStart = (gemCost, boxType, boxName, maxLosses) => {
     setActiveEvent({
       type: selectedEventType, gemCost,
       boxType: boxType || null, boxName: boxName || "",
       date: new Date().toISOString().split("T")[0],
       runs: [], notionPageId: null,
+      maxLosses: maxLosses || 3,
     });
     setScreen("summary");
   };
@@ -638,7 +706,7 @@ export default function App() {
         return s;
       }, 0);
       const gemBalance = totalGemPrize - activeEvent.gemCost * activeEvent.runs.length;
-      const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date);
+      const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3);
       if (eventPageId) {
         for (let i = 0; i < activeEvent.runs.length; i++)
           await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
@@ -667,7 +735,7 @@ export default function App() {
         {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} />}
         {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} />}
         {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
-        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} />}
+        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxLosses={activeEvent.maxLosses || 3} />}
         {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => setScreen("home")} isSyncing={isSyncing} />}
         {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
       </div>

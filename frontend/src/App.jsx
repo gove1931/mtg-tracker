@@ -78,7 +78,7 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
         <button onClick={onHistory} style={{ width: "100%", padding: "28px 20px", background: "rgba(104,217,164,0.05)", border: "1px solid rgba(104,217,164,0.18)", borderRadius: 14, cursor: "pointer", textAlign: "left" }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>過去の履歴を見る</div>
-          <div style={{ fontSize: 12, color: "#ccc" }}>Notionから戦績を取得して表示</div>
+          <div style={{ fontSize: 12, color: "#ccc" }}>DBから戦績を取得して表示</div>
         </button>
       </div>
     </div>
@@ -200,7 +200,7 @@ function HistoryScreen({ onBack }) {
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
       <div className="section-label">過去のイベント</div>
       {loading ? (
-        <div style={{ color: "#ccc", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Notionから取得中...</div>
+        <div style={{ color: "#ccc", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
       ) : events.length === 0 ? (
         <div style={{ color: "#ccc", fontSize: 13, textAlign: "center", padding: "20px 0" }}>履歴がありません</div>
       ) : (
@@ -461,7 +461,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
       <button className="btn mt-8"
         style={{ width: "100%", padding: "14px", color: "#ffcb6b", borderColor: "rgba(255,203,107,0.3)", marginTop: 8 }}
         onClick={onFinish} disabled={isSyncing}>
-        {isSyncing ? "Notionに同期中..." : "イベント終了 → Notionに保存"}
+        {isSyncing ? "保存中..." : "イベント終了 → DBに保存"}
       </button>
     </div>
   );
@@ -582,8 +582,8 @@ export default function App() {
         for (let i = 0; i < activeEvent.runs.length; i++)
           await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
         await updateEventInNotion(eventPageId, activeEvent.runs.length, totalWins, gemBalance);
-        showToast("✓ Notionに保存しました！");
-      } else { showToast("Notionへの保存に失敗しました", true); }
+        showToast("✓ 保存しました！");
+      } else { showToast("保存に失敗しました", true); }
     } catch (e) { showToast("エラーが発生しました", true); }
     finally { setIsSyncing(false); setActiveEvent(null); setScreen("home"); }
   };

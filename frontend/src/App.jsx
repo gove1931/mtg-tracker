@@ -243,7 +243,9 @@ function HistoryScreen({ onBack, onEditEvent }) {
               onClick={() => setConfirmDelete(true)}>削除</button>
           </div>
         </div>
-        <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>{selectedEvent.date}</div>
+        <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>
+          {selectedEvent.date} ・ 総対戦: {(selectedEvent.totalWins || 0) + (selectedEvent.totalLosses || 0)}戦
+        </div>
         {confirmDelete && (
           <div style={{ marginBottom: 16, padding: "12px 14px", background: "rgba(255,128,128,0.08)", border: "1px solid rgba(255,128,128,0.3)", borderRadius: 10 }}>
             <div style={{ fontSize: 13, color: "#ff8080", marginBottom: 10 }}>このイベントを削除しますか？（Runデータも全て削除されます）</div>
@@ -356,7 +358,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
                             <div>
                               <div style={{ fontSize: 10, color: "#7ecfff", marginBottom: 2 }}>{ev.type}</div>
                               <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{ev.date}</div>
-                              <div style={{ fontSize: 11, color: "#bbb", marginTop: 1 }}>{ev.totalRuns}Run {ev.totalWins}勝</div>
+                              <div style={{ fontSize: 11, color: "#bbb", marginTop: 1 }}>{ev.totalRuns}Run / {(ev.totalWins||0)+(ev.totalLosses||0)}戦 {ev.totalWins}勝</div>
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: bal >= 0 ? "#68d9a4" : "#ff8080" }}>
                               {bal >= 0 ? "+" : ""}{bal.toLocaleString()}G
@@ -585,7 +587,9 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, is
       </button>
       <div className="section-label">{event.isEditing ? "イベント編集中" : "イベント進行中"}</div>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{event.type}</div>
-      <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
+      <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>
+        消費: {event.gemCost.toLocaleString()}ジェム/Run ・ 総対戦: {totalWins + totalLosses}戦
+      </div>
 
       <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <div className="summary-card"><div className="summary-val">{event.runs.length}</div><div className="summary-key">Runs</div></div>

@@ -45,12 +45,16 @@ async function createRunInNotion(run, eventPageId, runIndex) {
   });
 }
 
-async function updateEventInNotion(eventPageId, totalRuns, totalWins, gemBalance) {
+async function updateEventInNotion(eventPageId, totalRuns, totalWins, totalLosses, gemBalance) {
   await fetch(`${API_URL}/api/events/${eventPageId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ totalRuns, totalWins, gemBalance }),
+    body: JSON.stringify({ totalRuns, totalWins, totalLosses, gemBalance }),
   });
+}
+
+async function deleteRunFromDB(runId) {
+  await fetch(`${API_URL}/api/runs/${runId}`, { method: "DELETE" });
 }
 
 // ===== HomeScreen =====
@@ -159,7 +163,7 @@ function monthLabel(key) {
   return `${y}年${parseInt(m)}月`;
 }
 
-function HistoryScreen({ onBack }) {
+function HistoryScreen({ onBack, onEditEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -212,7 +216,11 @@ function HistoryScreen({ onBack }) {
         <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }}
           onClick={() => setSelectedEvent(null)}>← 一覧に戻る</button>
         <div className="section-label">{selectedEvent.type}</div>
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{selectedEvent.name}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{selectedEvent.name}</div>
+          <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}
+            onClick={() => onEditEvent(selectedEvent, runs)}>編集</button>
+        </div>
         <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>{selectedEvent.date}</div>
         <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalRuns || 0}</div><div className="summary-key">Runs</div></div>
@@ -275,6 +283,11 @@ function HistoryScreen({ onBack }) {
           {groups.map(([key, monthEvents]) => {
             const isOpen = openMonths.has(key);
             const monthBalance = monthEvents.reduce((s, ev) => s + (ev.gemBalance || 0), 0);
+            const monthWins = monthEvents.reduce((s, ev) => s + (ev.totalWins || 0), 0);
+            const monthLosses = monthEvents.reduce((s, ev) => s + (ev.totalLosses || 0), 0);
+            const monthWinRate = (monthWins + monthLosses) > 0
+              ? Math.round(monthWins / (monthWins + monthLosses) * 100)
+              : null;
             return (
               <div key={key}>
                 {/* 月ヘッダー */}
@@ -286,6 +299,9 @@ function HistoryScreen({ onBack }) {
                     <span style={{ fontSize: 10, color: "#7ecfff" }}>{isOpen ? "▼" : "▶"}</span>
                     <span style={{ fontSize: 14, fontWeight: 700, color: "#e0e0e0" }}>{monthLabel(key)}</span>
                     <span style={{ fontSize: 11, color: "#bbb" }}>{monthEvents.length}件</span>
+                    {monthWinRate !== null && (
+                      <span style={{ fontSize: 11, color: "#ffcb6b" }}>{monthWinRate}%</span>
+                    )}
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: monthBalance >= 0 ? "#68d9a4" : "#ff8080" }}>
                     {monthBalance >= 0 ? "+" : ""}{monthBalance.toLocaleString()}G
@@ -512,7 +528,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
 }
 
 // ===== EventSummaryScreen =====
-function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
+function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, isSyncing }) {
   const totalWins = event.runs.reduce((s, r) => s + r.wins, 0);
   const totalLosses = event.runs.reduce((s, r) => s + (r.losses || 0), 0);
   const winRate = (totalWins + totalLosses) > 0
@@ -530,8 +546,10 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
 
   return (
     <div className="screen">
-      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← ホーム</button>
-      <div className="section-label">イベント進行中</div>
+      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>
+        {event.isEditing ? "← 履歴に戻る" : "← ホーム"}
+      </button>
+      <div className="section-label">{event.isEditing ? "イベント編集中" : "イベント進行中"}</div>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{event.type}</div>
       <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
 
@@ -596,6 +614,12 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
               <span className="run-num">#{i + 1}</span>
               <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
               <span className="run-prize">{prize?.icon} {prizeText}</span>
+              {event.isEditing && (
+                <button onClick={() => onDeleteRun(r)}
+                  style={{ marginLeft: "auto", background: "none", border: "none", color: "#ff8080", fontSize: 16, cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>
+                  ×
+                </button>
+              )}
             </div>
           );
         })}
@@ -605,7 +629,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
       <button className="btn mt-8"
         style={{ width: "100%", padding: "14px", color: "#ffcb6b", borderColor: "rgba(255,203,107,0.3)", marginTop: 8 }}
         onClick={onFinish} disabled={isSyncing}>
-        {isSyncing ? "保存中..." : "イベント終了 → DBに保存"}
+        {isSyncing ? "保存中..." : event.isEditing ? "変更を保存" : "イベント終了 → DBに保存"}
       </button>
     </div>
   );
@@ -710,11 +734,37 @@ export default function App() {
     setScreen("summary");
   };
 
+  const handleDeleteRunFromEdit = (run) => {
+    setActiveEvent(prev => ({
+      ...prev,
+      runs: prev.runs.filter(r => r !== run),
+      deletedRunIds: run.id ? [...(prev.deletedRunIds || []), run.id] : (prev.deletedRunIds || []),
+    }));
+  };
+
+  const handleEditEvent = (ev, runs) => {
+    setActiveEvent({
+      type: ev.type,
+      gemCost: ev.gemCost,
+      boxType: null,
+      boxName: "",
+      date: ev.date,
+      maxLosses: ev.maxLosses || 3,
+      runs: runs,
+      isEditing: true,
+      eventId: ev.id,
+      deletedRunIds: [],
+    });
+    setScreen("summary");
+  };
+
   const handleFinishEvent = async () => {
     if (!activeEvent) return;
+    const isEditing = activeEvent.isEditing;
     setIsSyncing(true);
     try {
       const totalWins = activeEvent.runs.reduce((s, r) => s + r.wins, 0);
+      const totalLosses = activeEvent.runs.reduce((s, r) => s + (r.losses || 0), 0);
       const totalGemPrize = activeEvent.runs.reduce((s, r) => {
         if (r.prizeType === "ジェム") return s + r.prizeGem;
         if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
@@ -722,15 +772,31 @@ export default function App() {
         return s;
       }, 0);
       const gemBalance = totalGemPrize - activeEvent.gemCost * activeEvent.runs.length;
-      const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3);
-      if (eventPageId) {
-        for (let i = 0; i < activeEvent.runs.length; i++)
-          await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
-        await updateEventInNotion(eventPageId, activeEvent.runs.length, totalWins, gemBalance);
-        showToast("✓ 保存しました！");
-      } else { showToast("保存に失敗しました", true); }
+
+      if (isEditing) {
+        for (const id of (activeEvent.deletedRunIds || []))
+          await deleteRunFromDB(id);
+        const existingRuns = activeEvent.runs.filter(r => r.id);
+        const newRuns = activeEvent.runs.filter(r => !r.id);
+        for (let i = 0; i < newRuns.length; i++)
+          await createRunInNotion(newRuns[i], activeEvent.eventId, existingRuns.length + i + 1);
+        await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
+        showToast("✓ 更新しました！");
+      } else {
+        const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3);
+        if (eventPageId) {
+          for (let i = 0; i < activeEvent.runs.length; i++)
+            await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
+          await updateEventInNotion(eventPageId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
+          showToast("✓ 保存しました！");
+        } else { showToast("保存に失敗しました", true); }
+      }
     } catch (e) { showToast("エラーが発生しました", true); }
-    finally { setIsSyncing(false); setActiveEvent(null); setScreen("home"); }
+    finally {
+      setIsSyncing(false);
+      setActiveEvent(null);
+      setScreen(isEditing ? "history" : "home");
+    }
   };
 
   return (
@@ -749,10 +815,10 @@ export default function App() {
         )}
         {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
         {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} />}
-        {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} />}
+        {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
         {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
         {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxLosses={activeEvent.maxLosses || 3} />}
-        {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => setScreen("home")} isSyncing={isSyncing} />}
+        {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
         {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
       </div>
     </>

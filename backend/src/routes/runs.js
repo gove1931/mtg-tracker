@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { createRun, getRunsByEvent } = require("../db");
+const { createRun, getRunsByEvent, deleteRun } = require("../db");
 
 const router = Router();
 
@@ -19,6 +19,15 @@ router.post("/", async (req, res) => {
   try {
     const run = await createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount });
     res.status(201).json(run);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    await deleteRun(req.params.id);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

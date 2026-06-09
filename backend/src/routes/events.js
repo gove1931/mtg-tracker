@@ -25,9 +25,9 @@ router.post("/", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
-  const { totalRuns, totalWins, gemBalance } = req.body;
+  const { totalRuns, totalWins, totalLosses, gemBalance } = req.body;
   try {
-    await updateEvent(req.params.id, { totalRuns, totalWins, gemBalance });
+    await updateEvent(req.params.id, { totalRuns, totalWins, totalLosses, gemBalance });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

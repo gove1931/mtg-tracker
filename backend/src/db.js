@@ -17,17 +17,21 @@ async function createEvent({ eventType, gemCost, date, maxLosses }) {
 async function getEvents() {
   const { rows } = await pool.query(
     `SELECT id, name, type, to_char(date, 'YYYY-MM-DD') AS date,
-            gem_cost, total_runs, total_wins, gem_balance, max_losses
+            gem_cost, total_runs, total_wins, total_losses, gem_balance, max_losses
      FROM events ORDER BY date DESC, created_at DESC`
   );
   return rows.map(rowToEvent);
 }
 
-async function updateEvent(id, { totalRuns, totalWins, gemBalance }) {
+async function updateEvent(id, { totalRuns, totalWins, totalLosses, gemBalance }) {
   await pool.query(
-    `UPDATE events SET total_runs=$1, total_wins=$2, gem_balance=$3 WHERE id=$4`,
-    [totalRuns, totalWins, gemBalance, id]
+    `UPDATE events SET total_runs=$1, total_wins=$2, total_losses=$3, gem_balance=$4 WHERE id=$5`,
+    [totalRuns, totalWins, totalLosses ?? 0, gemBalance, id]
   );
+}
+
+async function deleteRun(id) {
+  await pool.query("DELETE FROM runs WHERE id=$1", [id]);
 }
 
 // ===== 戦績 =====
@@ -54,15 +58,16 @@ async function getRunsByEvent(eventId) {
 
 function rowToEvent(r) {
   return {
-    id:         r.id,
-    name:       r.name,
-    type:       r.type,
-    date:       r.date,
-    gemCost:    r.gem_cost,
-    totalRuns:  r.total_runs,
-    totalWins:  r.total_wins,
-    gemBalance: r.gem_balance,
-    maxLosses:  r.max_losses,
+    id:          r.id,
+    name:        r.name,
+    type:        r.type,
+    date:        r.date,
+    gemCost:     r.gem_cost,
+    totalRuns:   r.total_runs,
+    totalWins:   r.total_wins,
+    totalLosses: r.total_losses,
+    gemBalance:  r.gem_balance,
+    maxLosses:   r.max_losses,
   };
 }
 
@@ -77,4 +82,4 @@ function rowToRun(r) {
   };
 }
 
-module.exports = { createEvent, getEvents, updateEvent, createRun, getRunsByEvent };
+module.exports = { createEvent, getEvents, updateEvent, createRun, getRunsByEvent, deleteRun };

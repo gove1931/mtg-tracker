@@ -61,7 +61,7 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
           <div className="section-label">進行中のイベント</div>
           <div className="card" style={{ borderColor: "rgba(126,207,255,0.25)", marginBottom: 20 }}>
             <div style={{ fontSize: 13, color: "#7ecfff", marginBottom: 4 }}>{activeEvent.type}</div>
-            <div style={{ fontSize: 11, color: "#555", marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>
               消費: {activeEvent.gemCost.toLocaleString()}ジェム　Run数: {activeEvent.runs.length}
             </div>
             <button className="btn-primary" onClick={onResumeEvent}>続きから記録する</button>
@@ -73,12 +73,12 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
         <button onClick={onRecord} style={{ width: "100%", padding: "28px 20px", background: "rgba(126,207,255,0.06)", border: "1px solid rgba(126,207,255,0.2)", borderRadius: 14, cursor: "pointer", textAlign: "left" }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>🎮</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#e0e0e0", marginBottom: 4 }}>ゲームを記録する</div>
-          <div style={{ fontSize: 12, color: "#555" }}>新しいイベントを開始してRunを記録</div>
+          <div style={{ fontSize: 12, color: "#888" }}>新しいイベントを開始してRunを記録</div>
         </button>
         <button onClick={onHistory} style={{ width: "100%", padding: "28px 20px", background: "rgba(104,217,164,0.05)", border: "1px solid rgba(104,217,164,0.18)", borderRadius: 14, cursor: "pointer", textAlign: "left" }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#e0e0e0", marginBottom: 4 }}>過去の履歴を見る</div>
-          <div style={{ fontSize: 12, color: "#555" }}>Notionから戦績を取得して表示</div>
+          <div style={{ fontSize: 12, color: "#888" }}>Notionから戦績を取得して表示</div>
         </button>
       </div>
     </div>
@@ -95,7 +95,7 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
           <div className="section-label">進行中のイベント</div>
           <div className="card" style={{ borderColor: "rgba(126,207,255,0.2)", marginBottom: 16 }}>
             <div style={{ fontSize: 13, color: "#7ecfff", marginBottom: 4 }}>{activeEvent.type}</div>
-            <div style={{ fontSize: 11, color: "#555", marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>
               消費: {activeEvent.gemCost.toLocaleString()}ジェム　Run数: {activeEvent.runs.length}
             </div>
             <button className="btn-primary" onClick={onResumeEvent}>続きから記録する</button>
@@ -156,7 +156,7 @@ function HistoryScreen({ onBack }) {
           onClick={() => setSelectedEvent(null)}>← 一覧に戻る</button>
         <div className="section-label">{selectedEvent.type}</div>
         <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{selectedEvent.name}</div>
-        <div style={{ fontSize: 11, color: "#555", marginBottom: 16 }}>{selectedEvent.date}</div>
+        <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>{selectedEvent.date}</div>
         <div className="event-summary">
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalRuns || 0}</div><div className="summary-key">Runs</div></div>
           <div className="summary-card"><div className="summary-val">{selectedEvent.totalWins || 0}</div><div className="summary-key">総勝利</div></div>
@@ -169,11 +169,11 @@ function HistoryScreen({ onBack }) {
         </div>
         <div className="section-label">Run履歴</div>
         {runsLoading ? (
-          <div style={{ color: "#444", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
+          <div style={{ color: "#888", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
         ) : (
           <div className="run-list">
             {runs.length === 0
-              ? <div style={{ color: "#444", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Runデータなし</div>
+              ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Runデータなし</div>
               : runs.map((r, i) => {
                   const prize = PRIZE_TYPES.find(p => p.id === r.prizeType);
                   let prizeText = prize?.label || "";
@@ -200,9 +200,9 @@ function HistoryScreen({ onBack }) {
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
       <div className="section-label">過去のイベント</div>
       {loading ? (
-        <div style={{ color: "#444", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Notionから取得中...</div>
+        <div style={{ color: "#888", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Notionから取得中...</div>
       ) : events.length === 0 ? (
-        <div style={{ color: "#444", fontSize: 13, textAlign: "center", padding: "20px 0" }}>履歴がありません</div>
+        <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>履歴がありません</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {events.map((ev) => {
@@ -215,7 +215,7 @@ function HistoryScreen({ onBack }) {
                   <div>
                     <div style={{ fontSize: 11, color: "#7ecfff", marginBottom: 2 }}>{ev.type}</div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "#e0e0e0" }}>{ev.name}</div>
-                    <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{ev.date} — {ev.totalRuns}Run {ev.totalWins}勝</div>
+                    <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{ev.date} — {ev.totalRuns}Run {ev.totalWins}勝</div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: bal >= 0 ? "#68d9a4" : "#ff8080" }}>
                     {bal >= 0 ? "+" : ""}{bal.toLocaleString()}G
@@ -257,10 +257,13 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
         <div className="section-label">ボックスプライズの種類（任意）</div>
         <div className="btn-grid mt-8" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
           <button className={`btn ${boxType === null ? "btn-selected" : ""}`}
+            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
             onClick={() => { setBoxType(null); setBoxName(""); }}>なし</button>
           <button className={`btn ${boxType === "PB_BOX" ? "btn-selected" : ""}`}
+            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
             onClick={() => setBoxType("PB_BOX")}>🎁 プレイ</button>
           <button className={`btn ${boxType === "CB_BOX" ? "btn-selected" : ""}`}
+            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
             onClick={() => setBoxType("CB_BOX")}>✨ コレクター</button>
         </div>
         {boxType && (
@@ -268,7 +271,7 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
             <input className="input-field" type="text"
               placeholder="例: ストリクスヘイブンの秘密 日本語版"
               value={boxName} onChange={e => setBoxName(e.target.value)} />
-            <div style={{ fontSize: 11, color: "#444", marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
               換算: {boxType === "PB_BOX" ? "20,000" : "60,000"}ジェム/箱
             </div>
           </div>
@@ -392,7 +395,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← ホーム</button>
       <div className="section-label">イベント進行中</div>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{event.type}</div>
-      <div style={{ fontSize: 11, color: "#555", marginBottom: 16 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
+      <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
 
       <div className="event-summary">
         <div className="summary-card"><div className="summary-val">{event.runs.length}</div><div className="summary-key">Runs</div></div>
@@ -410,23 +413,23 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, isSyncing }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ textAlign: "center", flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#ff8080" }}>-{totalGemCost.toLocaleString()}</div>
-              <div style={{ fontSize: 9, color: "#555", textTransform: "uppercase", marginTop: 2 }}>総消費ジェム</div>
+              <div style={{ fontSize: 9, color: "#888", textTransform: "uppercase", marginTop: 2 }}>総消費ジェム</div>
             </div>
             <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.07)" }} />
             <div style={{ textAlign: "center", flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#68d9a4" }}>+{totalGemPrize.toLocaleString()}</div>
-              <div style={{ fontSize: 9, color: "#555", textTransform: "uppercase", marginTop: 2 }}>総獲得ジェム</div>
+              <div style={{ fontSize: 9, color: "#888", textTransform: "uppercase", marginTop: 2 }}>総獲得ジェム</div>
             </div>
             <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.07)" }} />
             <div style={{ textAlign: "center", flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: gemBalance >= 0 ? "#68d9a4" : "#ff8080" }}>
                 {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
               </div>
-              <div style={{ fontSize: 9, color: "#555", textTransform: "uppercase", marginTop: 2 }}>差し引き</div>
+              <div style={{ fontSize: 9, color: "#888", textTransform: "uppercase", marginTop: 2 }}>差し引き</div>
             </div>
           </div>
           {hasBoxPrize && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 10, color: "#555", textAlign: "center" }}>
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 10, color: "#888", textAlign: "center" }}>
               ※ BOXは暫定換算値（PB=20,000 / CB=60,000ジェム/箱）で計算
             </div>
           )}
@@ -474,7 +477,7 @@ const styles = `
 
   .header { padding: 20px 20px 12px; position: relative; z-index: 1; }
   .header-title { font-size: 18px; font-weight: 700; color: #7ecfff; letter-spacing: 0.05em; }
-  .header-sub { font-size: 11px; color: #444; margin-top: 2px; letter-spacing: 0.08em; }
+  .header-sub { font-size: 11px; color: #666; margin-top: 2px; letter-spacing: 0.08em; }
 
   .status-bar { margin: 0 20px 8px; padding: 8px 12px; background: rgba(126,207,255,0.06); border: 1px solid rgba(126,207,255,0.15); border-radius: 8px; font-size: 11px; color: #7ecfff; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: #7ecfff; animation: pulse 1.5s infinite; flex-shrink: 0; }
@@ -484,7 +487,7 @@ const styles = `
 
   .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
 
-  .section-label { font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+  .section-label { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
 
   .divider { height: 1px; background: rgba(255,255,255,0.06); margin: 16px 0; }
 
@@ -504,7 +507,7 @@ const styles = `
 
   .input-field { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #e0e0e0; font-size: 15px; padding: 12px 14px; outline: none; }
   .input-field:focus { border-color: rgba(126,207,255,0.35); }
-  .input-field::placeholder { color: #444; }
+  .input-field::placeholder { color: #666; }
 
   .wins-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .win-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #ccc; cursor: pointer; font-size: 22px; font-weight: 700; padding: 16px 0; transition: all 0.15s; }
@@ -518,15 +521,15 @@ const styles = `
   .event-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
   .summary-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 12px; text-align: center; }
   .summary-val { font-size: 22px; font-weight: 700; }
-  .summary-key { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+  .summary-key { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
   .gem-positive { color: #68d9a4; }
   .gem-negative { color: #ff8080; }
 
   .run-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   .run-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; font-size: 13px; }
-  .run-num { font-size: 10px; color: #555; width: 24px; flex-shrink: 0; }
+  .run-num { font-size: 10px; color: #888; width: 24px; flex-shrink: 0; }
   .run-wins { font-weight: 600; color: #e0e0e0; width: 32px; flex-shrink: 0; }
-  .run-prize { color: #aaa; font-size: 12px; flex: 1; }
+  .run-prize { color: #bbb; font-size: 12px; flex: 1; }
 
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(104,217,164,0.15); border: 1px solid rgba(104,217,164,0.4); border-radius: 10px; color: #68d9a4; font-size: 14px; padding: 12px 24px; white-space: nowrap; z-index: 999; }
   .toast-error { background: rgba(255,128,128,0.12); border-color: rgba(255,128,128,0.35); color: #ff8080; }

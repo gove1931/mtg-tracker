@@ -243,9 +243,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
               onClick={() => setConfirmDelete(true)}>削除</button>
           </div>
         </div>
-        <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>
-          {selectedEvent.date} ・ 総対戦: {(selectedEvent.totalWins || 0) + (selectedEvent.totalLosses || 0)}戦
-        </div>
+        <div style={{ fontSize: 11, color: "#ccc", marginBottom: 12 }}>{selectedEvent.date}</div>
         {confirmDelete && (
           <div style={{ marginBottom: 16, padding: "12px 14px", background: "rgba(255,128,128,0.08)", border: "1px solid rgba(255,128,128,0.3)", borderRadius: 10 }}>
             <div style={{ fontSize: 13, color: "#ff8080", marginBottom: 10 }}>このイベントを削除しますか？（Runデータも全て削除されます）</div>
@@ -258,24 +256,41 @@ function HistoryScreen({ onBack, onEditEvent }) {
             </div>
           </div>
         )}
-        <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
-          <div className="summary-card"><div className="summary-val">{selectedEvent.totalRuns || 0}</div><div className="summary-key">Runs</div></div>
-          <div className="summary-card"><div className="summary-val">{selectedEvent.totalWins || 0}</div><div className="summary-key">総勝利</div></div>
-          <div className="summary-card">
-            <div className={`summary-val ${balance >= 0 ? "gem-positive" : "gem-negative"}`}>
-              {balance >= 0 ? "+" : ""}{balance.toLocaleString()}
-            </div>
-            <div className="summary-key">ジェム収支</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-val" style={{ color: "#ffcb6b" }}>
-              {runs.length > 0 && (runs.reduce((s, r) => s + r.wins, 0) + runs.reduce((s, r) => s + (r.losses || 0), 0)) > 0
-                ? `${Math.round(runs.reduce((s, r) => s + r.wins, 0) / (runs.reduce((s, r) => s + r.wins, 0) + runs.reduce((s, r) => s + (r.losses || 0), 0)) * 100)}%`
-                : "—"}
-            </div>
-            <div className="summary-key">勝率</div>
-          </div>
-        </div>
+        {(() => {
+          const tw = selectedEvent.totalWins || 0;
+          const tl = selectedEvent.totalLosses || 0;
+          const wr = (tw + tl) > 0 ? Math.round(tw / (tw + tl) * 100) : null;
+          return (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <div className="summary-card">
+                  <div className="summary-val">{selectedEvent.totalRuns || 0}</div>
+                  <div className="summary-key">Runs</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-val">{tw + tl}</div>
+                  <div className="summary-key">総対戦</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-val" style={{ color: "#ffcb6b" }}>{wr !== null ? `${wr}%` : "—"}</div>
+                  <div className="summary-key">勝率</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <div className="summary-card">
+                  <div className="summary-val">{tw}</div>
+                  <div className="summary-key">総勝利</div>
+                </div>
+                <div className="summary-card">
+                  <div className={`summary-val ${balance >= 0 ? "gem-positive" : "gem-negative"}`}>
+                    {balance >= 0 ? "+" : ""}{balance.toLocaleString()}
+                  </div>
+                  <div className="summary-key">ジェム収支</div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
         <div className="section-label">Run履歴</div>
         {runsLoading ? (
           <div style={{ color: "#ccc", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
@@ -358,7 +373,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
                             <div>
                               <div style={{ fontSize: 10, color: "#7ecfff", marginBottom: 2 }}>{ev.type}</div>
                               <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{ev.date}</div>
-                              <div style={{ fontSize: 11, color: "#bbb", marginTop: 1 }}>{ev.totalRuns}Run / {(ev.totalWins||0)+(ev.totalLosses||0)}戦 {ev.totalWins}勝</div>
+                              <div style={{ fontSize: 11, color: "#bbb", marginTop: 1 }}>{ev.totalRuns}Run ・ {(ev.totalWins||0)+(ev.totalLosses||0)}戦 {ev.totalWins}勝</div>
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: bal >= 0 ? "#68d9a4" : "#ff8080" }}>
                               {bal >= 0 ? "+" : ""}{bal.toLocaleString()}G
@@ -587,24 +602,34 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, is
       </button>
       <div className="section-label">{event.isEditing ? "イベント編集中" : "イベント進行中"}</div>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{event.type}</div>
-      <div style={{ fontSize: 11, color: "#ccc", marginBottom: 16 }}>
-        消費: {event.gemCost.toLocaleString()}ジェム/Run ・ 総対戦: {totalWins + totalLosses}戦
-      </div>
+      <div style={{ fontSize: 11, color: "#ccc", marginBottom: 12 }}>消費: {event.gemCost.toLocaleString()}ジェム/Run</div>
 
-      <div className="event-summary" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
-        <div className="summary-card"><div className="summary-val">{event.runs.length}</div><div className="summary-key">Runs</div></div>
-        <div className="summary-card"><div className="summary-val">{totalWins}</div><div className="summary-key">総勝利</div></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
         <div className="summary-card">
-          <div className={`summary-val ${gemBalance >= 0 ? "gem-positive" : "gem-negative"}`}>
-            {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
-          </div>
-          <div className="summary-key">ジェム収支</div>
+          <div className="summary-val">{event.runs.length}</div>
+          <div className="summary-key">Runs</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-val">{totalWins + totalLosses}</div>
+          <div className="summary-key">総対戦</div>
         </div>
         <div className="summary-card">
           <div className="summary-val" style={{ color: "#ffcb6b" }}>
             {winRate !== null ? `${winRate}%` : "—"}
           </div>
           <div className="summary-key">勝率</div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div className="summary-card">
+          <div className="summary-val">{totalWins}</div>
+          <div className="summary-key">総勝利</div>
+        </div>
+        <div className="summary-card">
+          <div className={`summary-val ${gemBalance >= 0 ? "gem-positive" : "gem-negative"}`}>
+            {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
+          </div>
+          <div className="summary-key">ジェム収支</div>
         </div>
       </div>
 

@@ -461,12 +461,13 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses }) {
+function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses, previousRuns }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
   const [prizeGem, setPrizeGem] = useState("");
   const [prizeBoxCount, setPrizeBoxCount] = useState(null);
+  const [autoFilled, setAutoFilled] = useState(false);
   const gemPresets = [500, 1000, 2500, 3000, 4500, 5400, 6000, 8100, 10800];
 
   const visiblePrizes = PRIZE_TYPES.filter(pt => {
@@ -479,7 +480,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
     (prizeType !== "ジェム" || prizeGem) &&
     (!(prizeType === "PB_BOX" || prizeType === "CB_BOX") || prizeBoxCount !== null);
 
-  const handlePrizeType = (id) => { setPrizeType(id); setPrizeGem(""); setPrizeBoxCount(null); };
+  const handlePrizeType = (id) => { setAutoFilled(false); setPrizeType(id); setPrizeGem(""); setPrizeBoxCount(null); };
 
   const handleWins = (n) => {
     setWins(n);
@@ -487,6 +488,17 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
       setLosses(maxLosses || 3);
     } else {
       setLosses(null);
+    }
+    // 同じ勝利数の過去Runがあれば報酬を自動入力
+    const prev = previousRuns?.find(r => r.wins === n);
+    if (prev) {
+      setPrizeType(prev.prizeType);
+      setPrizeGem(prev.prizeGem ? String(prev.prizeGem) : "");
+      setPrizeBoxCount(prev.prizeBoxCount || null);
+      setAutoFilled(true);
+    } else {
+      setPrizeType(null); setPrizeGem(""); setPrizeBoxCount(null);
+      setAutoFilled(false);
     }
   };
 
@@ -518,7 +530,14 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses 
         </div>
       )}
       <div className="card">
-        <div className="section-label">プライズ</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div className="section-label" style={{ marginBottom: 0 }}>プライズ</div>
+          {autoFilled && (
+            <div style={{ fontSize: 10, color: "#68d9a4", background: "rgba(104,217,164,0.08)", border: "1px solid rgba(104,217,164,0.25)", borderRadius: 6, padding: "3px 8px" }}>
+              前回と同じ報酬を自動入力
+            </div>
+          )}
+        </div>
         <div className="prize-grid">
           {visiblePrizes.map(pt => (
             <button key={pt.id} className="prize-btn"
@@ -880,7 +899,7 @@ export default function App() {
         {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} />}
         {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
         {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
-        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxLosses={activeEvent.maxLosses || 3} />}
+        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
         {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
         {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
       </div>

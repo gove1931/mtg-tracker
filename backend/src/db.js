@@ -4,12 +4,12 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // ===== イベント =====
 
-async function createEvent({ eventType, gemCost, date, maxLosses }) {
+async function createEvent({ eventType, gemCost, date, maxLosses, maxWins }) {
   const name = `${date} ${eventType}`;
   const { rows } = await pool.query(
-    `INSERT INTO events (name, type, date, gem_cost, gem_balance, max_losses)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name`,
-    [name, eventType, date, gemCost, -gemCost, maxLosses ?? 3]
+    `INSERT INTO events (name, type, date, gem_cost, gem_balance, max_losses, max_wins)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name`,
+    [name, eventType, date, gemCost, -gemCost, maxLosses ?? 3, maxWins ?? 7]
   );
   return { id: rows[0].id, name: rows[0].name };
 }
@@ -17,7 +17,7 @@ async function createEvent({ eventType, gemCost, date, maxLosses }) {
 async function getEvents() {
   const { rows } = await pool.query(
     `SELECT id, name, type, to_char(date, 'YYYY-MM-DD') AS date,
-            gem_cost, total_runs, total_wins, total_losses, gem_balance, max_losses
+            gem_cost, total_runs, total_wins, total_losses, gem_balance, max_losses, max_wins
      FROM events ORDER BY date DESC, created_at DESC`
   );
   return rows.map(rowToEvent);
@@ -72,6 +72,7 @@ function rowToEvent(r) {
     totalLosses: r.total_losses,
     gemBalance:  r.gem_balance,
     maxLosses:   r.max_losses,
+    maxWins:     r.max_wins,
   };
 }
 

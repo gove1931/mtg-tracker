@@ -13,11 +13,11 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { eventType, gemCost, date, maxLosses } = req.body;
+  const { eventType, gemCost, date, maxLosses, maxWins } = req.body;
   if (!eventType || gemCost == null || !date)
     return res.status(400).json({ error: "eventType, gemCost, date は必須です" });
   try {
-    const event = await createEvent({ eventType, gemCost, date, maxLosses });
+    const event = await createEvent({ eventType, gemCost, date, maxLosses, maxWins });
     res.status(201).json(event);
   } catch (e) {
     res.status(500).json({ error: e.message });

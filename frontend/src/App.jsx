@@ -22,11 +22,11 @@ const PRIZE_TYPES = [
 ];
 
 // ===== API関数 =====
-async function createEventInNotion(eventType, gemCost, date, maxLosses) {
+async function createEventInNotion(eventType, gemCost, date, maxLosses, maxWins) {
   const res = await fetch(`${API_URL}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventType, gemCost, date, maxLosses }),
+    body: JSON.stringify({ eventType, gemCost, date, maxLosses, maxWins }),
   });
   const data = await res.json();
   return data.id || null;
@@ -396,10 +396,13 @@ function HistoryScreen({ onBack, onEditEvent }) {
 // ===== EventSetupScreen =====
 function EventSetupScreen({ eventType, onStart, onBack }) {
   const [gemCost, setGemCost] = useState("");
+  const [maxWins, setMaxWins] = useState(7);
   const [maxLosses, setMaxLosses] = useState(3);
   const [boxType, setBoxType] = useState(null);
   const [boxName, setBoxName] = useState("");
   const presets = [4000, 5000, 6000, 8000];
+  const maxWinsPresets = [4, 7];
+  const maxLossesPresets = [1, 2, 3];
 
   return (
     <div className="screen">
@@ -418,14 +421,31 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
         </div>
       </div>
       <div className="card">
-        <div className="section-label">何敗で終了か</div>
+        <div className="section-label">最大勝利数</div>
         <div style={{ display: "flex", gap: 8 }}>
-          {[1, 2, 3].map(n => (
+          {maxWinsPresets.map(n => (
+            <button key={n} className={`btn ${maxWins === n ? "btn-selected" : ""}`}
+              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
+              onClick={() => setMaxWins(n)}>{n}勝</button>
+          ))}
+          <input className="input-field" type="number" min="1" max="20" placeholder="他"
+            style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700, textAlign: "center" }}
+            value={maxWinsPresets.includes(maxWins) ? "" : String(maxWins)}
+            onChange={e => { const v = parseInt(e.target.value); if (v > 0) setMaxWins(v); }} />
+        </div>
+      </div>
+      <div className="card">
+        <div className="section-label">最大敗北数</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {maxLossesPresets.map(n => (
             <button key={n} className={`btn ${maxLosses === n ? "btn-selected" : ""}`}
               style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
               onClick={() => setMaxLosses(n)}>{n}敗</button>
           ))}
         </div>
+      </div>
+      <div style={{ padding: "8px 4px", marginBottom: 4, fontSize: 12, color: "#aaa", display: "flex", gap: 16 }}>
+        <span>最大試合数: <strong style={{ color: "#7ecfff" }}>{maxWins + maxLosses - 1}</strong></span>
       </div>
       <div className="card">
         <div className="section-label">ボックスプライズの種類（任意）</div>
@@ -453,7 +473,7 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
       </div>
       <button className="btn-primary mt-16"
         disabled={!gemCost || isNaN(Number(gemCost))}
-        onClick={() => onStart(Number(gemCost), boxType, boxName.trim(), maxLosses)}>
+        onClick={() => onStart(Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins)}>
         イベント開始
       </button>
     </div>
@@ -461,7 +481,7 @@ function EventSetupScreen({ eventType, onStart, onBack }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses, previousRuns }) {
+function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
@@ -484,8 +504,10 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses,
 
   const handleWins = (n) => {
     setWins(n);
-    if (n < 7) {
+    if (n < maxWins) {
       setLosses(maxLosses || 3);
+    } else if (maxLosses <= 1) {
+      setLosses(0);
     } else {
       setLosses(null);
     }
@@ -510,18 +532,18 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxLosses,
       </div>
       <div className="card">
         <div className="section-label">勝利数</div>
-        <div className="wins-grid">
-          {[0,1,2,3,4,5,6,7].map(n => (
+        <div className="wins-grid" style={{ gridTemplateColumns: `repeat(${Math.min(maxWins + 1, 4)}, 1fr)` }}>
+          {Array.from({ length: maxWins + 1 }, (_, n) => (
             <button key={n} className={`win-btn ${wins === n ? "win-btn-selected" : ""}`}
               onClick={() => handleWins(n)}>{n}</button>
           ))}
         </div>
       </div>
-      {wins === 7 && (
+      {wins === maxWins && maxLosses > 1 && (
         <div className="card">
-          <div className="section-label">敗北数（7勝時）</div>
+          <div className="section-label">敗北数（{maxWins}勝時）</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {Array.from({ length: maxLosses || 3 }, (_, n) => (
+            {Array.from({ length: maxLosses }, (_, n) => (
               <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
                 style={{ flex: 1 }}
                 onClick={() => setLosses(n)}>{n}</button>
@@ -800,13 +822,14 @@ export default function App() {
 
   const handleNewEvent = (type) => { setSelectedEventType(type); setScreen("setup"); };
 
-  const handleEventStart = (gemCost, boxType, boxName, maxLosses) => {
+  const handleEventStart = (gemCost, boxType, boxName, maxLosses, maxWins) => {
     setActiveEvent({
       type: selectedEventType, gemCost,
       boxType: boxType || null, boxName: boxName || "",
       date: new Date().toISOString().split("T")[0],
       runs: [], notionPageId: null,
       maxLosses: maxLosses || 3,
+      maxWins: maxWins || 7,
     });
     setScreen("summary");
   };
@@ -832,6 +855,7 @@ export default function App() {
       boxName: "",
       date: ev.date,
       maxLosses: ev.maxLosses || 3,
+      maxWins: ev.maxWins || 7,
       runs: runs,
       isEditing: true,
       eventId: ev.id,
@@ -865,7 +889,7 @@ export default function App() {
         await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
         showToast("✓ 更新しました！");
       } else {
-        const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3);
+        const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3, activeEvent.maxWins || 7);
         if (eventPageId) {
           for (let i = 0; i < activeEvent.runs.length; i++)
             await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
@@ -899,7 +923,7 @@ export default function App() {
         {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} />}
         {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
         {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
-        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
+        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
         {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
         {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
       </div>

@@ -13,11 +13,11 @@ router.get("/:eventId", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount } = req.body;
+  const { eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight } = req.body;
   if (!eventPageId || runIndex == null || wins == null || !prizeType)
     return res.status(400).json({ error: "eventPageId, runIndex, wins, prizeType は必須です" });
   try {
-    const run = await createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount });
+    const run = await createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight });
     res.status(201).json(run);
   } catch (e) {
     res.status(500).json({ error: e.message });

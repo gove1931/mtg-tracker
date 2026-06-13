@@ -14,11 +14,10 @@ const EVENT_TYPES = [
 const BOX_GEM_VALUE = { "PB_BOX": 20000, "CB_BOX": 60000 };
 
 const PRIZE_TYPES = [
-  { id: "なし",    label: "なし",                    icon: "✕", color: "#555" },
-  { id: "ジェム",  label: "ジェム",                  icon: "💎", color: "#7ecfff" },
-  { id: "PB_BOX",  label: "プレイブースターBOX",      icon: "🎁", color: "#f78c6c" },
-  { id: "CB_BOX",  label: "コレクターブースターBOX",  icon: "✨", color: "#c792ea" },
-  { id: "予選ウィークエンド権利", label: "予選権利",   icon: "🏆", color: "#ffcb6b" },
+  { id: "なし",   label: "なし",                   icon: "✕", color: "#555" },
+  { id: "ジェム", label: "ジェム",                 icon: "💎", color: "#7ecfff" },
+  { id: "PB_BOX", label: "プレイブースターBOX",    icon: "🎁", color: "#f78c6c" },
+  { id: "CB_BOX", label: "コレクターブースターBOX", icon: "✨", color: "#c792ea" },
 ];
 
 // ===== API関数 =====
@@ -41,6 +40,7 @@ async function createRunInNotion(run, eventPageId, runIndex) {
       wins: run.wins, losses: run.losses || 0,
       prizeType: run.prizeType,
       prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
+      hasRight: run.hasRight || false,
     }),
   });
 }
@@ -304,6 +304,9 @@ function HistoryScreen({ onBack, onEditEvent }) {
                   if (r.prizeType === "ジェム") prizeText += ` ${(r.prizeGem || 0).toLocaleString()}`;
                   if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
                     prizeText += ` ${r.prizeBoxCount}箱 ≈${(BOX_GEM_VALUE[r.prizeType] * r.prizeBoxCount).toLocaleString()}G`;
+                  if (r.hasRight || r.prizeType === "予選ウィークエンド権利")
+                    prizeText += (prizeText && prizeText !== "なし" ? " + " : "") + "🏆 権利";
+                  if (r.prizeType === "予選ウィークエンド権利") prizeText = prizeText.replace("undefined", "").trim();
                   return (
                     <div key={i} className="run-item">
                       <span className="run-num">#{i + 1}</span>
@@ -487,6 +490,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
   const [prizeType, setPrizeType] = useState(null);
   const [prizeGem, setPrizeGem] = useState("");
   const [prizeBoxCount, setPrizeBoxCount] = useState(null);
+  const [hasRight, setHasRight] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
   const gemPresets = [500, 1000, 2500, 3000, 4500, 5400, 6000, 8100, 10800];
 
@@ -501,6 +505,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
     (!(prizeType === "PB_BOX" || prizeType === "CB_BOX") || prizeBoxCount !== null);
 
   const handlePrizeType = (id) => { setAutoFilled(false); setPrizeType(id); setPrizeGem(""); setPrizeBoxCount(null); };
+  const handleToggleRight = () => { setAutoFilled(false); setHasRight(prev => !prev); };
 
   const handleWins = (n) => {
     setWins(n);
@@ -517,9 +522,10 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
       setPrizeType(prev.prizeType);
       setPrizeGem(prev.prizeGem ? String(prev.prizeGem) : "");
       setPrizeBoxCount(prev.prizeBoxCount || null);
+      setHasRight(prev.hasRight || false);
       setAutoFilled(true);
     } else {
-      setPrizeType(null); setPrizeGem(""); setPrizeBoxCount(null);
+      setPrizeType(null); setPrizeGem(""); setPrizeBoxCount(null); setHasRight(false);
       setAutoFilled(false);
     }
   };
@@ -560,7 +566,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
             </div>
           )}
         </div>
-        <div className="prize-grid">
+        <div className="prize-grid" style={{ gridTemplateColumns: `repeat(${visiblePrizes.length}, 1fr)` }}>
           {visiblePrizes.map(pt => (
             <button key={pt.id} className="prize-btn"
               style={prizeType === pt.id ? { background: "rgba(126,207,255,0.1)", borderColor: "rgba(126,207,255,0.4)", color: "#fff" } : {}}
@@ -570,6 +576,23 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
             </button>
           ))}
         </div>
+        <button
+          onClick={handleToggleRight}
+          style={{
+            marginTop: 8, width: "100%", padding: "10px 14px",
+            background: hasRight ? "rgba(255,203,107,0.1)" : "rgba(255,255,255,0.03)",
+            border: `1px solid ${hasRight ? "rgba(255,203,107,0.5)" : "rgba(255,255,255,0.08)"}`,
+            borderRadius: 8, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+          <span style={{ fontSize: 16 }}>🏆</span>
+          <span style={{ fontSize: 12, color: hasRight ? "#ffcb6b" : "#aaa", fontWeight: hasRight ? 600 : 400 }}>
+            権利獲得
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 11, color: hasRight ? "#ffcb6b" : "#555" }}>
+            {hasRight ? "ON" : "OFF"}
+          </span>
+        </button>
         {prizeType === "ジェム" && (
           <div className="mt-12">
             <input className="input-field" type="number" placeholder="例: 5400" value={prizeGem}
@@ -611,6 +634,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
         </button>
         <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave}
           onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
+            hasRight,
             boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
           Runを保存
         </button>
@@ -713,6 +737,9 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, is
             if (r.boxName) prizeText += ` (${r.boxName})`;
             prizeText += ` ≈${(BOX_GEM_VALUE[r.prizeType] * r.prizeBoxCount).toLocaleString()}G`;
           }
+          if (r.hasRight || r.prizeType === "予選ウィークエンド権利")
+            prizeText += (prizeText && prizeText !== "なし" ? " + " : "") + "🏆 権利";
+          if (r.prizeType === "予選ウィークエンド権利") prizeText = prizeText.replace("undefined", "").trim();
           return (
             <div key={i} className="run-item">
               <span className="run-num">#{i + 1}</span>

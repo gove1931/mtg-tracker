@@ -40,18 +40,18 @@ async function deleteEvent(id) {
 
 // ===== 戦績 =====
 
-async function createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount }) {
+async function createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight }) {
   const { rows } = await pool.query(
-    `INSERT INTO runs (event_id, run_index, wins, losses, prize_type, prize_gem, prize_box_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [eventPageId, runIndex, wins, losses ?? 0, prizeType, prizeGem || 0, prizeBoxCount || 0]
+    `INSERT INTO runs (event_id, run_index, wins, losses, prize_type, prize_gem, prize_box_count, has_right)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [eventPageId, runIndex, wins, losses ?? 0, prizeType, prizeGem || 0, prizeBoxCount || 0, hasRight ?? false]
   );
   return { id: rows[0].id };
 }
 
 async function getRunsByEvent(eventId) {
   const { rows } = await pool.query(
-    `SELECT id, run_index, wins, losses, prize_type, prize_gem, prize_box_count
+    `SELECT id, run_index, wins, losses, prize_type, prize_gem, prize_box_count, has_right
      FROM runs WHERE event_id=$1 ORDER BY run_index`,
     [eventId]
   );
@@ -84,6 +84,7 @@ function rowToRun(r) {
     prizeType:     r.prize_type,
     prizeGem:      r.prize_gem,
     prizeBoxCount: r.prize_box_count,
+    hasRight:      r.has_right,
   };
 }
 

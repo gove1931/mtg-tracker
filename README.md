@@ -19,7 +19,7 @@ home → history
 |------|------|
 | Home | 新規記録 / 履歴閲覧の選択。進行中イベントがあれば再開ボタン表示 |
 | Record Menu | イベント種別を選択（アリーナダイレクト / プレイイン / 予選 / カスタム） |
-| Event Setup | 消費ジェム・終了敗数・ボックス種別を設定してイベント開始 |
+| Event Setup | 消費ジェム・最大勝利数・最大敗北数・ボックス種別を設定してイベント開始 |
 | Run Entry | 各 Run の勝敗・プライズを入力（同勝利数の過去 Run から自動入力） |
 | Summary | Run 一覧・集計グリッド（Runs / 総対戦 / 勝率 / 総勝利 / ジェム収支） |
 | History | 月別アコーディオンで過去イベント一覧。イベント詳細・削除が可能 |
@@ -89,6 +89,7 @@ CREATE TABLE events (
   total_losses INTEGER DEFAULT 0,
   gem_balance INTEGER NOT NULL,
   max_losses  INTEGER DEFAULT 3,
+  max_wins    INTEGER DEFAULT 7,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 

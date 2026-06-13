@@ -187,3 +187,9 @@ push すると `post-receive` フックが自動ビルド & `pm2 restart` を実
 
 - `frontend/src/constants.js` が未使用（`App.jsx` でインライン定義が重複）
 - スタイルはすべて `App.jsx` 内のテンプレートリテラル CSS（外部 CSS ファイルなし）
+
+## 実装済み仕様メモ
+
+- イベント日付は JST（UTC+9）で記録（`toJSTDateString()` 使用）
+- 進行中イベントは `localStorage` に自動保存。リロード後も summary 画面に復元される
+- プライズはメイン（なし/ジェム/BOX）＋権利トグルの組み合わせが可能

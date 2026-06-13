@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 // VITE_API_URL: Vercelの環境変数に設定（例: https://api.gove.dev）
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+const toJSTDateString = () => {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().split("T")[0];
+};
+
 const EVENT_TYPES = [
   { id: "アリーナダイレクト", label: "アリーナダイレクト", english: "Arena Direct" },
   { id: "プレイイン", label: "プレイイン", english: "Play-In" },
@@ -836,11 +841,33 @@ const styles = `
 
 // ===== MAIN APP =====
 export default function App() {
-  const [screen, setScreen] = useState("home");
-  const [activeEvent, setActiveEvent] = useState(null);
+  const [activeEvent, setActiveEvent] = useState(() => {
+    try {
+      const saved = localStorage.getItem("mtg-activeEvent");
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const [screen, setScreen] = useState(() => {
+    try {
+      const saved = localStorage.getItem("mtg-activeEvent");
+      if (saved) {
+        const ev = JSON.parse(saved);
+        return ev.isEditing ? "home" : "summary";
+      }
+    } catch {}
+    return "home";
+  });
   const [selectedEventType, setSelectedEventType] = useState(null);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    if (activeEvent) {
+      localStorage.setItem("mtg-activeEvent", JSON.stringify(activeEvent));
+    } else {
+      localStorage.removeItem("mtg-activeEvent");
+    }
+  }, [activeEvent]);
 
   const showToast = useCallback((msg, isError = false) => {
     setToast({ msg, isError });
@@ -853,7 +880,7 @@ export default function App() {
     setActiveEvent({
       type: selectedEventType, gemCost,
       boxType: boxType || null, boxName: boxName || "",
-      date: new Date().toISOString().split("T")[0],
+      date: toJSTDateString(),
       runs: [], notionPageId: null,
       maxLosses: maxLosses || 3,
       maxWins: maxWins || 7,

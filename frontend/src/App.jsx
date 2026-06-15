@@ -9,11 +9,23 @@ const toJSTDateString = () => {
   return jst.toISOString().split("T")[0];
 };
 
-const EVENT_TYPES = [
-  { id: "アリーナダイレクト", label: "アリーナダイレクト", english: "Arena Direct" },
-  { id: "プレイイン", label: "プレイイン", english: "Play-In" },
-  { id: "リミテッドチャンピオンシップ予選", label: "リミテッドチャンピオンシップ予選", english: "Limited Championship Qualifier" },
+const DEFAULT_EVENT_TYPES = [
+  { id: "ev-1", label: "アリーナダイレクト", english: "Arena Direct" },
+  { id: "ev-2", label: "プレイイン", english: "Play-In" },
+  { id: "ev-3", label: "リミテッドチャンピオンシップ予選", english: "Limited Championship Qualifier" },
 ];
+
+function loadEventTypes() {
+  try {
+    const saved = localStorage.getItem("mtg-eventTypes");
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return DEFAULT_EVENT_TYPES;
+}
+
+function saveEventTypesToStorage(types) {
+  localStorage.setItem("mtg-eventTypes", JSON.stringify(types));
+}
 
 // PB BOX=20000G/箱、CB BOX=60000G/箱（20000G=15000円換算）
 const BOX_GEM_VALUE = { "PB_BOX": 20000, "CB_BOX": 60000 };
@@ -100,9 +112,10 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
 }
 
 // ===== RecordMenuScreen =====
-function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
-  const [showCustom, setShowCustom] = useState(false);
-  const [customName, setCustomName] = useState("");
+function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes }) {
+  const [showMore, setShowMore] = useState(false);
+  const mainTypes = eventTypes.slice(0, 5);
+  const moreTypes = eventTypes.slice(5);
 
   return (
     <div className="screen">
@@ -120,38 +133,145 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent }) {
           <div className="divider" />
         </>
       )}
-      <div className="section-label">新しいイベント</div>
-      {EVENT_TYPES.map(et => (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div className="section-label" style={{ marginBottom: 0 }}>新しいイベント</div>
+        <button className="btn" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onManageTypes}>⚙ 管理</button>
+      </div>
+      {mainTypes.map(et => (
         <button key={et.id} className="btn"
           style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px" }}
-          onClick={() => onNewEvent(et.id)}>
-          <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
-          <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span>
+          onClick={() => onNewEvent(et.label)}>
+          {et.english
+            ? <><span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
+               <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
+            : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
+          }
         </button>
       ))}
-      {!showCustom ? (
-        <button className="btn"
-          style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px" }}
-          onClick={() => setShowCustom(true)}>
-          <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>Other</span>
-          <span style={{ fontSize: 11, color: "#bbb" }}>その他</span>
-        </button>
-      ) : (
-        <div className="card" style={{ marginBottom: 8 }}>
-          <div className="section-label">イベント名を入力</div>
-          <input className="input-field" type="text" placeholder="例: スペシャルイベント"
-            value={customName} onChange={e => setCustomName(e.target.value)} autoFocus />
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <button className="btn" style={{ flex: 1 }}
-              onClick={() => { setShowCustom(false); setCustomName(""); }}>キャンセル</button>
-            <button className="btn-primary" style={{ flex: 2, padding: "10px" }}
-              disabled={!customName.trim()}
-              onClick={() => { if (customName.trim()) onNewEvent(customName.trim()); }}>
-              作成
+      {moreTypes.length > 0 && (
+        <>
+          <button className="btn"
+            style={{ width: "100%", marginBottom: 8, textAlign: "center", padding: "10px 16px", opacity: 0.7 }}
+            onClick={() => setShowMore(v => !v)}>
+            <span style={{ fontSize: 12, color: "#bbb" }}>{showMore ? "▲ 閉じる" : `▼ 他 ${moreTypes.length} 件`}</span>
+          </button>
+          {showMore && moreTypes.map(et => (
+            <button key={et.id} className="btn"
+              style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px", opacity: 0.85 }}
+              onClick={() => onNewEvent(et.label)}>
+              {et.english
+                ? <><span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
+                   <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
+                : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
+              }
             </button>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ===== EventTypeManagerScreen =====
+function EventTypeManagerScreen({ eventTypes, onSave, onBack }) {
+  const [types, setTypes] = useState(eventTypes);
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editEnglish, setEditEnglish] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newEnglish, setNewEnglish] = useState("");
+
+  const moveUp = (i) => {
+    if (i === 0) return;
+    const next = [...types];
+    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+    setTypes(next);
+  };
+
+  const moveDown = (i) => {
+    if (i === types.length - 1) return;
+    const next = [...types];
+    [next[i], next[i + 1]] = [next[i + 1], next[i]];
+    setTypes(next);
+  };
+
+  const startEdit = (t) => { setEditingId(t.id); setEditLabel(t.label); setEditEnglish(t.english || ""); };
+
+  const saveEdit = () => {
+    setTypes(prev => prev.map(t => t.id === editingId ? { ...t, label: editLabel.trim(), english: editEnglish.trim() } : t));
+    setEditingId(null);
+  };
+
+  const handleDelete = (id) => setTypes(prev => prev.filter(t => t.id !== id));
+
+  const handleAdd = () => {
+    if (!newLabel.trim()) return;
+    setTypes(prev => [...prev, { id: `ev-${Date.now()}`, label: newLabel.trim(), english: newEnglish.trim() }]);
+    setNewLabel(""); setNewEnglish(""); setShowAdd(false);
+  };
+
+  const handleSave = () => { onSave(types); onBack(); };
+
+  return (
+    <div className="screen">
+      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
+      <div className="section-label">イベントタイプを管理</div>
+      <div style={{ fontSize: 11, color: "#aaa", marginBottom: 16 }}>上から5件がメインに表示されます</div>
+
+      {types.map((t, i) => (
+        <div key={t.id} style={{ marginBottom: 8 }}>
+          {editingId === t.id ? (
+            <div className="card" style={{ margin: 0 }}>
+              <input className="input-field" value={editLabel} onChange={e => setEditLabel(e.target.value)}
+                placeholder="イベント名" style={{ marginBottom: 8 }} autoFocus />
+              <input className="input-field" value={editEnglish} onChange={e => setEditEnglish(e.target.value)}
+                placeholder="英語名（任意）" style={{ marginBottom: 8 }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn" style={{ flex: 1 }} onClick={() => setEditingId(null)}>キャンセル</button>
+                <button className="btn-primary" style={{ flex: 2, padding: "10px" }} onClick={saveEdit} disabled={!editLabel.trim()}>保存</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i === 0 ? 0.3 : 1 }}
+                  onClick={() => moveUp(i)} disabled={i === 0}>↑</button>
+                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i === types.length - 1 ? 0.3 : 1 }}
+                  onClick={() => moveDown(i)} disabled={i === types.length - 1}>↓</button>
+              </div>
+              <div style={{ flex: 1, padding: "10px 14px", background: "rgba(255,255,255,0.03)", border: `1px solid ${i < 5 ? "rgba(126,207,255,0.15)" : "rgba(255,255,255,0.07)"}`, borderRadius: 8 }}>
+                <div style={{ fontSize: 13, color: i < 5 ? "#7ecfff" : "#bbb", fontWeight: 600 }}>{t.english || t.label}</div>
+                {t.english && <div style={{ fontSize: 11, color: "#999", marginTop: 1 }}>{t.label}</div>}
+                {i === 4 && <div style={{ fontSize: 9, color: "#68d9a4", marginTop: 3 }}>↑ ここまでメイン表示</div>}
+              </div>
+              <button className="btn" style={{ padding: "8px 10px", fontSize: 12, flexShrink: 0 }} onClick={() => startEdit(t)}>編集</button>
+              <button className="btn" style={{ padding: "8px 10px", fontSize: 12, color: "#ff8080", borderColor: "rgba(255,128,128,0.3)", flexShrink: 0 }}
+                onClick={() => handleDelete(t.id)}>✕</button>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {showAdd ? (
+        <div className="card" style={{ marginTop: 8 }}>
+          <div className="section-label">新しいイベントタイプ</div>
+          <input className="input-field" value={newLabel} onChange={e => setNewLabel(e.target.value)}
+            placeholder="イベント名" style={{ marginBottom: 8 }} autoFocus />
+          <input className="input-field" value={newEnglish} onChange={e => setNewEnglish(e.target.value)}
+            placeholder="英語名（任意）" style={{ marginBottom: 8 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" style={{ flex: 1 }} onClick={() => { setShowAdd(false); setNewLabel(""); setNewEnglish(""); }}>キャンセル</button>
+            <button className="btn-primary" style={{ flex: 2, padding: "10px" }} onClick={handleAdd} disabled={!newLabel.trim()}>追加</button>
           </div>
         </div>
+      ) : (
+        <button className="btn" style={{ width: "100%", marginTop: 4, padding: "12px", color: "#68d9a4", borderColor: "rgba(104,217,164,0.3)" }}
+          onClick={() => setShowAdd(true)}>+ イベントタイプを追加</button>
       )}
+
+      <div className="divider" />
+      <button className="btn-primary" onClick={handleSave}>変更を保存</button>
     </div>
   );
 }
@@ -857,9 +977,15 @@ export default function App() {
     } catch {}
     return "home";
   });
+  const [eventTypes, setEventTypes] = useState(loadEventTypes);
   const [selectedEventType, setSelectedEventType] = useState(null);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSaveEventTypes = (types) => {
+    setEventTypes(types);
+    saveEventTypesToStorage(types);
+  };
 
   useEffect(() => {
     if (activeEvent) {
@@ -974,7 +1100,8 @@ export default function App() {
           </div>
         )}
         {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
-        {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} />}
+        {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
+        {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
         {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
         {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
         {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}

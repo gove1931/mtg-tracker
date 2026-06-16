@@ -1049,99 +1049,238 @@ const styles = `
     .pcd-ev-balance.pos { color: #16a34a; }
     .pcd-ev-balance.neg { color: #dc2626; }
   }
+
+  @media (min-width: 860px) {
+    .pcd-loading { padding: 32px; text-align: center; color: #94a3b8; font-size: 13px; }
+    .pcd-back-btn { background: none; border: 1px solid #e2e8f0; border-radius: 6px; color: #475569; cursor: pointer; font-size: 12px; padding: 7px 14px; transition: all 0.15s; display: inline-block; margin-bottom: 8px; }
+    .pcd-back-btn:hover { background: #f1f5f9; color: #1e293b; }
+    .mobile-app.pc-modal {
+      display: flex !important; position: fixed; inset: 0;
+      background: rgba(15,23,42,0.6); backdrop-filter: blur(3px);
+      z-index: 200; align-items: flex-start; justify-content: center;
+      padding-top: 48px; overflow-y: auto;
+    }
+    .mobile-app.pc-modal .app {
+      max-width: 440px; width: 100%; max-height: calc(100vh - 96px);
+      overflow-y: auto; border-radius: 16px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    }
+  }
 `;
 
-// ===== PCDemo（デモ用静的画面） =====
-const DEMO_EVENTS = [
-  { type: "アリーナダイレクト",               date: "2026/06/15", runs: 3, wins: 19, losses: 5,  balance: 4200  },
-  { type: "プレイイン",                        date: "2026/06/12", runs: 2, wins: 9,  losses: 5,  balance: -6000 },
-  { type: "リミテッドチャンピオンシップ予選",   date: "2026/06/10", runs: 4, wins: 24, losses: 8,  balance: 14600 },
-  { type: "アリーナダイレクト",               date: "2026/06/08", runs: 2, wins: 13, losses: 3,  balance: 3400  },
-];
+// ===== PCEventDetail =====
+function PCEventDetail({ event, runs, runsLoading, onBack }) {
+  const tw = event.totalWins || 0;
+  const tl = event.totalLosses || 0;
+  const wr = (tw + tl) > 0 ? Math.round(tw / (tw + tl) * 100) : null;
+  const balance = event.gemBalance || 0;
 
-function PCDemo() {
-  const totalBalance = DEMO_EVENTS.reduce((s, e) => s + e.balance, 0);
-  const totalWins    = DEMO_EVENTS.reduce((s, e) => s + e.wins, 0);
-  const totalLosses  = DEMO_EVENTS.reduce((s, e) => s + e.losses, 0);
-  const winRate      = Math.round(totalWins / (totalWins + totalLosses) * 100);
-  const totalRuns    = DEMO_EVENTS.reduce((s, e) => s + e.runs, 0);
+  return (
+    <div>
+      <button className="pcd-back-btn" onClick={onBack}>← 履歴に戻る</button>
+      <div className="pcd-page-header">
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>{event.type}</div>
+          <div className="pcd-page-title">{event.name}</div>
+        </div>
+        <div className="pcd-page-sub">{event.date}</div>
+      </div>
+      <div className="pcd-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {[
+          { val: (balance >= 0 ? "+" : "") + balance.toLocaleString() + " G", cls: balance >= 0 ? "pos" : "neg", label: "ジェム収支" },
+          { val: wr !== null ? wr + "%" : "—", cls: "", label: "勝率" },
+          { val: tw, cls: "", label: "総勝利" },
+          { val: tw + tl, cls: "", label: "総対戦" },
+          { val: event.totalRuns || 0, cls: "", label: "Run数" },
+        ].map(s => (
+          <div key={s.label} className="pcd-stat">
+            <div className={`pcd-stat-val ${s.cls}`}>{s.val}</div>
+            <div className="pcd-stat-key">{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="pcd-section-header">
+        <div className="pcd-section-title">Run履歴</div>
+      </div>
+      {runsLoading ? (
+        <div className="pcd-loading">取得中...</div>
+      ) : (
+        <div className="pcd-table">
+          <div className="pcd-table-head" style={{ gridTemplateColumns: "52px 100px 1fr" }}>
+            <span>#</span><span>成績</span><span>プライズ</span>
+          </div>
+          {runs.length === 0 ? (
+            <div className="pcd-loading">Runデータなし</div>
+          ) : runs.map((r, i) => {
+            const prize = PRIZE_TYPES.find(p => p.id === r.prizeType);
+            let prizeText = prize?.label || "";
+            if (r.prizeType === "ジェム") prizeText += ` ${(r.prizeGem || 0).toLocaleString()} G`;
+            if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX") prizeText += ` ${r.prizeBoxCount}箱`;
+            if (r.hasRight) prizeText += " 🏆 権利";
+            return (
+              <div key={i} className="pcd-table-row" style={{ gridTemplateColumns: "52px 100px 1fr" }}>
+                <span style={{ color: "#94a3b8", fontSize: 12 }}>#{i + 1}</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{r.wins}勝{r.losses != null ? ` ${r.losses}敗` : ""}</span>
+                <span style={{ color: "#475569", fontSize: 13 }}>{prize?.icon} {prizeText}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== PCDemo（実データ PC画面） =====
+function PCDemo({ screen, setScreen, refreshKey }) {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/events`);
+      const data = await res.json();
+      setEvents(data.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+    } catch {}
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchEvents(); }, [fetchEvents, refreshKey]);
+
+  const fetchRuns = async (eventId) => {
+    setRunsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/runs/${eventId}`);
+      setRuns(await res.json());
+    } catch { setRuns([]); }
+    finally { setRunsLoading(false); }
+  };
+
+  const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); fetchRuns(ev.id); };
+
+  const thisMonth = toJSTDateString().slice(0, 7);
+  const monthEvents = events.filter(e => (e.date || "").startsWith(thisMonth));
+  const monthBalance = monthEvents.reduce((s, e) => s + (e.gemBalance || 0), 0);
+  const monthWins    = monthEvents.reduce((s, e) => s + (e.totalWins || 0), 0);
+  const monthLosses  = monthEvents.reduce((s, e) => s + (e.totalLosses || 0), 0);
+  const winRate = (monthWins + monthLosses) > 0 ? Math.round(monthWins / (monthWins + monthLosses) * 100) : null;
+  const monthRuns = monthEvents.reduce((s, e) => s + (e.totalRuns || 0), 0);
+  const [yr, mo] = thisMonth.split("-");
+
+  const navItems = [
+    { label: "ホーム", key: "home" },
+    { label: "ゲームを記録する", key: "record" },
+    { label: "過去の履歴", key: "history" },
+  ];
+
+  const EventTable = ({ evs, clickable }) => {
+    if (loading) return <div className="pcd-loading">読み込み中...</div>;
+    if (!evs.length) return <div className="pcd-loading">データがありません</div>;
+    return (
+      <div className="pcd-table">
+        <div className="pcd-table-head">
+          <span>イベント</span><span>日付</span><span>成績</span><span>Run数</span><span>ジェム収支</span>
+        </div>
+        {evs.map(ev => {
+          const tw = ev.totalWins || 0;
+          const tl = ev.totalLosses || 0;
+          const wr2 = (tw + tl) > 0 ? Math.round(tw / (tw + tl) * 100) : null;
+          const bal = ev.gemBalance || 0;
+          return (
+            <div key={ev.id} className="pcd-table-row" onClick={() => clickable && handleSelectEvent(ev)}>
+              <span className="pcd-ev-name">{ev.type}</span>
+              <span className="pcd-ev-date">{ev.date}</span>
+              <span className="pcd-ev-record">
+                {tw}勝 {tl}敗{wr2 !== null ? <><span> </span><span className="pcd-ev-wr">{wr2}%</span></> : ""}
+              </span>
+              <span className="pcd-ev-runs">{ev.totalRuns || 0} Run</span>
+              <span className={`pcd-ev-balance ${bal >= 0 ? "pos" : "neg"}`}>
+                {bal >= 0 ? "+" : ""}{bal.toLocaleString()} G
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="pcd-wrap">
       <nav className="pcd-nav">
         <div className="pcd-logo">⚔ MTG Tracker</div>
         <div className="pcd-nav-links">
-          <span className="pcd-nav-link pcd-nav-link-active">ホーム</span>
-          <span className="pcd-nav-link">ゲームを記録する</span>
-          <span className="pcd-nav-link">過去の履歴</span>
-          <span className="pcd-nav-link">イベント設定</span>
+          {navItems.map(n => (
+            <span key={n.key}
+              className={`pcd-nav-link ${screen === n.key ? "pcd-nav-link-active" : ""}`}
+              onClick={() => { setSelectedEvent(null); setScreen(n.key); }}>
+              {n.label}
+            </span>
+          ))}
         </div>
-        <span className="pcd-nav-cta">＋ 新しいRun</span>
+        <span className="pcd-nav-cta" onClick={() => setScreen("record")}>＋ 新しいRun</span>
       </nav>
 
       <main className="pcd-main">
-        <div className="pcd-page-header">
-          <div className="pcd-page-title">ダッシュボード</div>
-          <div className="pcd-page-sub">2026年6月</div>
-        </div>
-
-        <div className="pcd-stats">
-          <div className="pcd-stat">
-            <div className={`pcd-stat-val ${totalBalance >= 0 ? "pos" : "neg"}`}>
-              {totalBalance >= 0 ? "+" : ""}{totalBalance.toLocaleString()} G
-            </div>
-            <div className="pcd-stat-key">今月のジェム収支</div>
+        {/* ホーム */}
+        {screen === "home" && <>
+          <div className="pcd-page-header">
+            <div className="pcd-page-title">ダッシュボード</div>
+            <div className="pcd-page-sub">{yr}年{parseInt(mo)}月</div>
           </div>
-          <div className="pcd-stat">
-            <div className="pcd-stat-val">{winRate}%</div>
-            <div className="pcd-stat-key">今月の勝率</div>
-          </div>
-          <div className="pcd-stat">
-            <div className="pcd-stat-val">{totalWins + totalLosses}</div>
-            <div className="pcd-stat-key">今月の総対戦数</div>
-          </div>
-          <div className="pcd-stat">
-            <div className="pcd-stat-val">{totalRuns}</div>
-            <div className="pcd-stat-key">今月のRun数</div>
-          </div>
-        </div>
-
-        <div className="pcd-actions">
-          <div className="pcd-action pcd-action-primary">
-            <div className="pcd-action-icon">🎮</div>
-            <div className="pcd-action-title">ゲームを記録する</div>
-            <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
-          </div>
-          <div className="pcd-action">
-            <div className="pcd-action-icon">📊</div>
-            <div className="pcd-action-title">過去の履歴を見る</div>
-            <div className="pcd-action-desc">過去のイベントと戦績を確認</div>
-          </div>
-        </div>
-
-        <div className="pcd-section-header">
-          <div className="pcd-section-title">最近のイベント</div>
-          <span className="pcd-section-link">すべて見る →</span>
-        </div>
-        <div className="pcd-table">
-          <div className="pcd-table-head">
-            <span>イベント</span><span>日付</span><span>成績</span><span>Run数</span><span>ジェム収支</span>
-          </div>
-          {DEMO_EVENTS.map((ev, i) => {
-            const wr = Math.round(ev.wins / (ev.wins + ev.losses) * 100);
-            return (
-              <div key={i} className="pcd-table-row">
-                <span className="pcd-ev-name">{ev.type}</span>
-                <span className="pcd-ev-date">{ev.date}</span>
-                <span className="pcd-ev-record">{ev.wins}勝 {ev.losses}敗 <span className="pcd-ev-wr">{wr}%</span></span>
-                <span className="pcd-ev-runs">{ev.runs} Run</span>
-                <span className={`pcd-ev-balance ${ev.balance >= 0 ? "pos" : "neg"}`}>
-                  {ev.balance >= 0 ? "+" : ""}{ev.balance.toLocaleString()} G
-                </span>
+          <div className="pcd-stats">
+            {[
+              { val: loading ? "…" : (monthBalance >= 0 ? "+" : "") + monthBalance.toLocaleString() + " G", cls: loading ? "" : monthBalance >= 0 ? "pos" : "neg", label: "今月のジェム収支" },
+              { val: loading ? "…" : winRate !== null ? winRate + "%" : "—", cls: "", label: "今月の勝率" },
+              { val: loading ? "…" : String(monthWins + monthLosses), cls: "", label: "今月の総対戦数" },
+              { val: loading ? "…" : String(monthRuns), cls: "", label: "今月のRun数" },
+            ].map(s => (
+              <div key={s.label} className="pcd-stat">
+                <div className={`pcd-stat-val ${s.cls}`}>{s.val}</div>
+                <div className="pcd-stat-key">{s.label}</div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+          <div className="pcd-actions">
+            <div className="pcd-action pcd-action-primary" onClick={() => setScreen("record")}>
+              <div className="pcd-action-icon">🎮</div>
+              <div className="pcd-action-title">ゲームを記録する</div>
+              <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
+            </div>
+            <div className="pcd-action" onClick={() => setScreen("history")}>
+              <div className="pcd-action-icon">📊</div>
+              <div className="pcd-action-title">過去の履歴を見る</div>
+              <div className="pcd-action-desc">過去のイベントと戦績を確認</div>
+            </div>
+          </div>
+          <div className="pcd-section-header">
+            <div className="pcd-section-title">最近のイベント</div>
+            <span className="pcd-section-link" onClick={() => setScreen("history")}>すべて見る →</span>
+          </div>
+          <EventTable evs={events.slice(0, 5)} clickable={false} />
+        </>}
+
+        {/* 履歴 */}
+        {screen === "history" && !selectedEvent && <>
+          <div className="pcd-page-header">
+            <div className="pcd-page-title">過去の履歴</div>
+            <div className="pcd-page-sub">全{loading ? "…" : events.length}件</div>
+          </div>
+          <EventTable evs={events} clickable={true} />
+        </>}
+
+        {/* イベント詳細 */}
+        {screen === "history" && selectedEvent && (
+          <PCEventDetail
+            event={selectedEvent}
+            runs={runs}
+            runsLoading={runsLoading}
+            onBack={() => setSelectedEvent(null)}
+          />
+        )}
       </main>
     </div>
   );
@@ -1168,6 +1307,7 @@ export default function App() {
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleSaveEventTypes = (types) => {
     setEventTypes(types);
@@ -1266,15 +1406,21 @@ export default function App() {
     finally {
       setIsSyncing(false);
       setActiveEvent(null);
+      setRefreshKey(k => k + 1);
       setScreen(isEditing ? "history" : "home");
     }
   };
 
+  const isRecording = !["home", "history"].includes(screen);
+
   return (
     <>
       <style>{styles}</style>
-      {/* スマホ: 既存のダークテーマ（PC時は非表示） */}
-      <div className="mobile-app">
+      {/* スマホ: 既存のダークテーマ。PC時はrecording中のみモーダルとして表示 */}
+      <div
+        className={`mobile-app${isRecording ? " pc-modal" : ""}`}
+        onClick={(e) => { if (isRecording && e.target === e.currentTarget) setScreen("home"); }}
+      >
         <div className="app">
           <div className="bg-glow" />
           <div className="header">
@@ -1295,8 +1441,8 @@ export default function App() {
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
       </div>
-      {/* PC: ライトテーマのデモ画面（スマホ時は非表示） */}
-      <PCDemo />
+      {/* PC: ライトテーマ（スマホ時は非表示） */}
+      <PCDemo screen={screen} setScreen={setScreen} refreshKey={refreshKey} />
     </>
   );
 }

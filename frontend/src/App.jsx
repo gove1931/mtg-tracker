@@ -968,6 +968,72 @@ const styles = `
 
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(104,217,164,0.15); border: 1px solid rgba(104,217,164,0.4); border-radius: 10px; color: #68d9a4; font-size: 14px; padding: 12px 24px; white-space: nowrap; z-index: 999; }
   .toast-error { background: rgba(255,128,128,0.12); border-color: rgba(255,128,128,0.35); color: #ff8080; }
+
+  /* ===== PC レイアウト ===== */
+  .pc-layout { display: flex; min-height: 100vh; background: #0a0a0f; }
+  .pc-sidebar { display: none; }
+
+  @media (min-width: 860px) {
+    .pc-layout { justify-content: center; align-items: flex-start; }
+
+    .pc-sidebar {
+      display: flex; flex-direction: column;
+      width: 260px; flex-shrink: 0;
+      padding: 48px 28px 40px;
+      border-right: 1px solid rgba(126,207,255,0.07);
+      min-height: 100vh;
+      position: sticky; top: 0;
+      overflow: hidden;
+      background: rgba(126,207,255,0.015);
+    }
+
+    .pc-sidebar-logo { margin-bottom: 4px; }
+    .pc-sidebar-title { font-size: 22px; font-weight: 800; color: #7ecfff; letter-spacing: 0.04em; line-height: 1.2; }
+    .pc-sidebar-sub { font-size: 11px; color: #aaa; letter-spacing: 0.12em; margin-top: 6px; text-transform: uppercase; }
+
+    .pc-sidebar-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 24px 0; }
+
+    .pc-sidebar-nav { display: flex; flex-direction: column; gap: 6px; }
+    .pc-nav-btn {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 10px 14px;
+      background: transparent; border: 1px solid transparent;
+      border-radius: 8px; color: #aaa; font-size: 13px; cursor: pointer;
+      text-align: left; transition: all 0.15s;
+    }
+    .pc-nav-btn:hover { background: rgba(255,255,255,0.04); color: #e0e0e0; }
+    .pc-nav-btn-active { background: rgba(126,207,255,0.08) !important; border-color: rgba(126,207,255,0.2) !important; color: #7ecfff !important; }
+
+    .pc-sidebar-event {
+      padding: 14px 16px;
+      background: rgba(126,207,255,0.06);
+      border: 1px solid rgba(126,207,255,0.18);
+      border-radius: 10px;
+    }
+    .pc-sidebar-event-label { font-size: 9px; color: #68d9a4; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+    .pc-sidebar-event-type { font-size: 13px; font-weight: 600; color: #e0e0e0; margin-bottom: 8px; }
+    .pc-sidebar-event-meta { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #aaa; }
+
+    .pc-sidebar-screen-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; }
+
+    .pc-sidebar-glow {
+      position: absolute; bottom: -60px; left: -40px;
+      width: 260px; height: 260px;
+      background: radial-gradient(circle, rgba(126,207,255,0.04) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .app {
+      flex: 1; max-width: 520px;
+      border-right: 1px solid rgba(126,207,255,0.07);
+    }
+
+    /* ヘッダーはサイドバーがあるので非表示 */
+    .header { display: none; }
+
+    /* トーストをapp内中央に */
+    .toast { left: calc(260px + (100vw - 260px) / 2); }
+  }
 `;
 
 // ===== MAIN APP =====
@@ -1093,27 +1159,70 @@ export default function App() {
     }
   };
 
+  const screenLabel = {
+    home: "ホーム", record: "イベント選択", "manage-types": "タイプ管理",
+    history: "履歴", run: "Run記録", summary: "イベント進行中",
+  }[screen] || "";
+
   return (
     <>
       <style>{styles}</style>
-      <div className="app">
-        <div className="bg-glow" />
-        <div className="header">
-          <div className="header-title">MTG Arena Tracker</div>
-          <div className="header-sub">戦績管理</div>
-        </div>
-        {activeEvent && (
-          <div className="status-bar">
-            <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
+      <div className="pc-layout">
+        <aside className="pc-sidebar">
+          <div className="pc-sidebar-logo">
+            <div className="pc-sidebar-title">MTG Arena</div>
+            <div className="pc-sidebar-title" style={{ color: "#68d9a4" }}>Tracker</div>
+            <div className="pc-sidebar-sub">戦績管理</div>
           </div>
-        )}
-        {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
-        {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
-        {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
-        {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-        {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
-        {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
-        {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
+          <div className="pc-sidebar-divider" />
+          {activeEvent ? (
+            <div className="pc-sidebar-event">
+              <div className="pc-sidebar-event-label">進行中</div>
+              <div className="pc-sidebar-event-type">{activeEvent.type}</div>
+              <div className="pc-sidebar-event-meta">
+                <span>Run {activeEvent.runs.length}</span>
+                <span>{activeEvent.gemCost.toLocaleString()} G/Run</span>
+              </div>
+            </div>
+          ) : (
+            <div className="pc-sidebar-nav">
+              {[
+                { s: "home",    icon: "🏠", label: "ホーム" },
+                { s: "record",  icon: "🎮", label: "記録する" },
+                { s: "history", icon: "📊", label: "履歴" },
+              ].map(({ s, icon, label }) => (
+                <button key={s}
+                  className={`pc-nav-btn ${screen === s ? "pc-nav-btn-active" : ""}`}
+                  onClick={() => setScreen(s)}>
+                  <span>{icon}</span><span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="pc-sidebar-divider" />
+          <div className="pc-sidebar-screen-label">{screenLabel}</div>
+          <div className="pc-sidebar-glow" />
+        </aside>
+
+        <div className="app">
+          <div className="bg-glow" />
+          <div className="header">
+            <div className="header-title">MTG Arena Tracker</div>
+            <div className="header-sub">戦績管理</div>
+          </div>
+          {activeEvent && (
+            <div className="status-bar">
+              <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
+            </div>
+          )}
+          {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
+          {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
+          {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
+          {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
+          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
+          {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
+          {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
+        </div>
       </div>
     </>
   );

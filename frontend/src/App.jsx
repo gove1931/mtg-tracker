@@ -1076,8 +1076,9 @@ const styles = `
     .pcd-ghost-btn { width: 100%; padding: 11px; background: #fff; border: 1px dashed #c7d2fe; border-radius: 8px; color: #4f46e5; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
     .pcd-ghost-btn:hover { background: #eef2ff; border-style: solid; }
 
-    /* PC record: 2カラム */
+    /* PC record: 2カラム（広い画面では3カラム） */
     .pcd-form-2col { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+    .pcd-preview-panel { display: none; }
     .pcd-type-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
     .pcd-type-btn { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; text-align: left; cursor: pointer; transition: all 0.15s; width: 100%; }
     .pcd-type-btn:hover { border-color: #c7d2fe; background: #f8fafc; }
@@ -1094,8 +1095,9 @@ const styles = `
     .pcd-summary-layout { display: grid; grid-template-columns: 1fr 300px; gap: 24px; align-items: start; }
     .pcd-summary-sidebar { position: sticky; top: 80px; }
 
-    /* PC run entry: 2カラム */
+    /* PC run entry: 2カラム（広い画面では3カラム） */
     .pcd-run-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .pcd-history-panel { display: none; }
     .pcd-wins-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .pcd-win-btn { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; color: #475569; cursor: pointer; font-size: 20px; font-weight: 700; padding: 14px 0; transition: all 0.15s; }
     .pcd-win-btn:hover { border-color: #c7d2fe; background: #eef2ff; }
@@ -1110,6 +1112,23 @@ const styles = `
     .pcd-right-btn:hover { border-color: #c7d2fe; }
     .pcd-right-btn-active { background: #fefce8; border-color: #fbbf24; color: #92400e; font-weight: 600; }
     .pcd-autofill-badge { font-size: 11px; color: #16a34a; background: #dcfce7; border: 1px solid #86efac; border-radius: 5px; padding: 4px 10px; }
+
+    /* 設定確認 / Run履歴 参照パネル（補助情報） */
+    .pcd-preview-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .pcd-preview-row:last-child { border-bottom: none; }
+    .pcd-preview-row span:first-child { color: #64748b; }
+    .pcd-preview-row span:last-child { font-weight: 600; color: #0f172a; text-align: right; }
+    .pcd-mini-row { display: flex; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+    .pcd-mini-row:last-child { border-bottom: none; }
+    .pcd-mini-num { color: #94a3b8; width: 22px; flex-shrink: 0; }
+    .pcd-mini-wins { font-weight: 600; color: #1e293b; width: 60px; flex-shrink: 0; }
+    .pcd-mini-prize { color: #64748b; flex: 1; }
+  }
+
+  @media (min-width: 1180px) {
+    .pcd-form-2col { grid-template-columns: 260px minmax(360px, 520px) 1fr; }
+    .pcd-run-layout { grid-template-columns: 1fr 1fr minmax(260px, 320px); }
+    .pcd-preview-panel, .pcd-history-panel { display: block; }
   }
 `;
 
@@ -1217,6 +1236,21 @@ function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent }) {
         ) : (
           <div className="pcd-form-empty">← イベントタイプを選択してください</div>
         )}
+        {/* 補助情報: 設定確認プレビュー */}
+        <div className="pcd-preview-panel pcd-form-card">
+          <span className="pcd-form-label">確認</span>
+          {selectedType ? (
+            <>
+              <div className="pcd-preview-row"><span>イベント</span><span>{selectedType}</span></div>
+              <div className="pcd-preview-row"><span>消費ジェム</span><span>{gemCost && !isNaN(Number(gemCost)) ? `${Number(gemCost).toLocaleString()} G` : "—"}</span></div>
+              <div className="pcd-preview-row"><span>最大勝利</span><span>{maxWins}勝</span></div>
+              <div className="pcd-preview-row"><span>最大敗北</span><span>{maxLosses}敗</span></div>
+              <div className="pcd-preview-row"><span>ボックス</span><span>{boxType ? (boxName || (boxType === "PB_BOX" ? "プレイブースター" : "コレクター")) : "なし"}</span></div>
+            </>
+          ) : (
+            <div className="pcd-form-hint">イベントタイプを選択すると、設定内容がここに表示されます。</div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1320,7 +1354,7 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
       </div>
       <div className="pcd-summary-layout">
         {/* Left: run list */}
-        <div>
+        <div style={{ maxWidth: 640 }}>
           <div className="pcd-section-header"><div className="pcd-section-title">Run履歴</div></div>
           <div className="pcd-table">
             <div className="pcd-table-head" style={{gridTemplateColumns:event.isEditing?"52px 100px 1fr 36px":"52px 100px 1fr"}}>
@@ -1507,6 +1541,26 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
               boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""})}>
             Runを保存
           </button>
+        </div>
+        {/* 補助情報: これまでのRun履歴 */}
+        <div className="pcd-history-panel pcd-form-card">
+          <span className="pcd-form-label">これまでのRun</span>
+          {hasPrev ? previousRuns.map((r,i)=>{
+            const prize=PRIZE_TYPES.find(p=>p.id===r.prizeType);
+            let pt=prize?.label||"";
+            if(r.prizeType==="ジェム") pt+=` ${r.prizeGem.toLocaleString()}G`;
+            if(r.prizeType==="PB_BOX"||r.prizeType==="CB_BOX") pt+=` ${r.prizeBoxCount}箱`;
+            if(r.hasRight) pt+=" 🏆";
+            return (
+              <div key={i} className="pcd-mini-row">
+                <span className="pcd-mini-num">#{i+1}</span>
+                <span className="pcd-mini-wins">{r.wins}勝{r.losses!=null?` ${r.losses}敗`:""}</span>
+                <span className="pcd-mini-prize">{prize?.icon} {pt}</span>
+              </div>
+            );
+          }) : (
+            <div className="pcd-form-hint">これが最初のRunです。</div>
+          )}
         </div>
       </div>
     </div>

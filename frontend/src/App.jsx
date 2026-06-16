@@ -1568,11 +1568,18 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
 }
 
 // ===== PCEventDetail =====
-function PCEventDetail({ event, runs, runsLoading, onBack }) {
+function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const tw = event.totalWins || 0;
   const tl = event.totalLosses || 0;
   const wr = (tw + tl) > 0 ? Math.round(tw / (tw + tl) * 100) : null;
   const balance = event.gemBalance || 0;
+
+  const handleDeleteClick = async () => {
+    setIsDeleting(true);
+    try { await onDelete(event); } finally { setIsDeleting(false); }
+  };
 
   return (
     <div>
@@ -1582,8 +1589,24 @@ function PCEventDetail({ event, runs, runsLoading, onBack }) {
           <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>{event.type}</div>
           <div className="pcd-page-title">{event.name}</div>
         </div>
-        <div className="pcd-page-sub">{event.date}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="pcd-page-sub">{event.date}</div>
+          <button className="pcd-preset-btn" onClick={() => onEdit(event, runs)}>編集</button>
+          <button className="pcd-preset-btn" style={{ color: "#ef4444", borderColor: "#fca5a5" }} onClick={() => setConfirmDelete(true)}>削除</button>
+        </div>
       </div>
+      {confirmDelete && (
+        <div style={{ marginBottom: 20, padding: "14px 16px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10 }}>
+          <div style={{ fontSize: 13, color: "#dc2626", marginBottom: 10 }}>このイベントを削除しますか？（Runデータも全て削除されます）</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="pcd-preset-btn" style={{ flex: 1 }} onClick={() => setConfirmDelete(false)}>キャンセル</button>
+            <button className="pcd-preset-btn" style={{ flex: 1, color: "#ef4444", borderColor: "#fca5a5" }}
+              disabled={isDeleting} onClick={handleDeleteClick}>
+              {isDeleting ? "削除中..." : "削除する"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="pcd-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {[
           { val: (balance >= 0 ? "+" : "") + balance.toLocaleString() + " G", cls: balance >= 0 ? "pos" : "neg", label: "ジェム収支" },
@@ -1631,7 +1654,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack }) {
 }
 
 // ===== PCDemo（実データ PC画面） =====
-function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes }) {
+function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -1660,6 +1683,12 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
   };
 
   const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); fetchRuns(ev.id); };
+
+  const handleDeleteEvent = async (ev) => {
+    await deleteEventFromDB(ev.id);
+    setEvents(prev => prev.filter(e => e.id !== ev.id));
+    setSelectedEvent(null);
+  };
 
   const thisMonth = toJSTDateString().slice(0, 7);
   const monthEvents = events.filter(e => (e.date || "").startsWith(thisMonth));
@@ -1828,6 +1857,8 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             runs={runs}
             runsLoading={runsLoading}
             onBack={() => setSelectedEvent(null)}
+            onEdit={onEditEvent}
+            onDelete={handleDeleteEvent}
           />
         )}
       </main>
@@ -1992,6 +2023,7 @@ export default function App() {
         onNewEvent={handleNewEvent} onSaveRun={handleSaveRun}
         onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
         isSyncing={isSyncing} onSaveEventTypes={handleSaveEventTypes}
+        onEditEvent={handleEditEvent}
       />
     </>
   );

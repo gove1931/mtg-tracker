@@ -114,8 +114,108 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
 // ===== RecordMenuScreen =====
 function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes }) {
   const [showMore, setShowMore] = useState(false);
+  const [selectedType, setSelectedType] = useState(null);
+  const [gemCost, setGemCost] = useState("");
+  const [maxWins, setMaxWins] = useState(7);
+  const [maxLosses, setMaxLosses] = useState(3);
+  const [boxType, setBoxType] = useState(null);
+  const [boxName, setBoxName] = useState("");
   const mainTypes = eventTypes.slice(0, 5);
   const moreTypes = eventTypes.slice(5);
+  const gemPresets = [4000, 5000, 6000, 8000];
+  const maxWinsPresets = [4, 7];
+  const maxLossesPresets = [1, 2, 3];
+
+  const handleSelectType = (label) => {
+    if (selectedType === label) { setSelectedType(null); return; }
+    setSelectedType(label);
+    setGemCost(""); setMaxWins(7); setMaxLosses(3); setBoxType(null); setBoxName("");
+  };
+
+  const handleStart = () => {
+    onNewEvent(selectedType, Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins);
+  };
+
+  const renderTypeButton = (et) => (
+    <div key={et.id} style={{ marginBottom: 8 }}>
+      <button className={`btn ${selectedType === et.label ? "btn-selected" : ""}`}
+        style={{ width: "100%", textAlign: "left", padding: "14px 16px" }}
+        onClick={() => handleSelectType(et.label)}>
+        {et.english
+          ? <><span style={{ fontSize: 13, color: selectedType === et.label ? "#7ecfff" : "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
+             <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
+          : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
+        }
+      </button>
+      {selectedType === et.label && (
+        <div className="card" style={{ margin: "4px 0 0", borderColor: "rgba(126,207,255,0.2)" }}>
+          <div className="section-label">消費ジェム（Run毎）</div>
+          <input className="input-field" type="number" placeholder="例: 6000" value={gemCost}
+            onChange={e => setGemCost(e.target.value)} autoFocus />
+          <div className="btn-grid btn-grid-2 mt-8">
+            {gemPresets.map(p => (
+              <button key={p} className={`btn ${gemCost == p ? "btn-selected" : ""}`}
+                onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
+            ))}
+          </div>
+
+          <div className="section-label" style={{ marginTop: 14 }}>最大勝利数</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {maxWinsPresets.map(n => (
+              <button key={n} className={`btn ${maxWins === n ? "btn-selected" : ""}`}
+                style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
+                onClick={() => setMaxWins(n)}>{n}勝</button>
+            ))}
+            <input className="input-field" type="number" min="1" max="20" placeholder="他"
+              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700, textAlign: "center" }}
+              value={maxWinsPresets.includes(maxWins) ? "" : String(maxWins)}
+              onChange={e => { const v = parseInt(e.target.value); if (v > 0) setMaxWins(v); }} />
+          </div>
+
+          <div className="section-label" style={{ marginTop: 14 }}>最大敗北数</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {maxLossesPresets.map(n => (
+              <button key={n} className={`btn ${maxLosses === n ? "btn-selected" : ""}`}
+                style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
+                onClick={() => setMaxLosses(n)}>{n}敗</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "#aaa", marginTop: 6 }}>
+            最大試合数: <strong style={{ color: "#7ecfff" }}>{maxWins + maxLosses - 1}</strong>
+          </div>
+
+          <div className="section-label" style={{ marginTop: 14 }}>ボックスプライズの種類（任意）</div>
+          <div className="btn-grid mt-8" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <button className={`btn ${boxType === null ? "btn-selected" : ""}`}
+              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
+              onClick={() => { setBoxType(null); setBoxName(""); }}>なし</button>
+            <button className={`btn ${boxType === "PB_BOX" ? "btn-selected" : ""}`}
+              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
+              onClick={() => setBoxType("PB_BOX")}>🎁 プレイ</button>
+            <button className={`btn ${boxType === "CB_BOX" ? "btn-selected" : ""}`}
+              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
+              onClick={() => setBoxType("CB_BOX")}>✨ コレクター</button>
+          </div>
+          {boxType && (
+            <div className="mt-8">
+              <input className="input-field" type="text"
+                placeholder="例: ストリクスヘイブンの秘密 日本語版"
+                value={boxName} onChange={e => setBoxName(e.target.value)} />
+              <div style={{ fontSize: 11, color: "#ccc", marginTop: 6 }}>
+                換算: {boxType === "PB_BOX" ? "20,000" : "60,000"}ジェム/箱
+              </div>
+            </div>
+          )}
+
+          <button className="btn-primary mt-16"
+            disabled={!gemCost || isNaN(Number(gemCost))}
+            onClick={handleStart}>
+            イベント開始
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="screen">
@@ -137,17 +237,7 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, even
         <div className="section-label" style={{ marginBottom: 0 }}>新しいイベント</div>
         <button className="btn" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onManageTypes}>⚙ 管理</button>
       </div>
-      {mainTypes.map(et => (
-        <button key={et.id} className="btn"
-          style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px" }}
-          onClick={() => onNewEvent(et.label)}>
-          {et.english
-            ? <><span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
-               <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
-            : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
-          }
-        </button>
-      ))}
+      {mainTypes.map(et => renderTypeButton(et))}
       {moreTypes.length > 0 && (
         <>
           <button className="btn"
@@ -155,17 +245,7 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, even
             onClick={() => setShowMore(v => !v)}>
             <span style={{ fontSize: 12, color: "#bbb" }}>{showMore ? "▲ 閉じる" : `▼ 他 ${moreTypes.length} 件`}</span>
           </button>
-          {showMore && moreTypes.map(et => (
-            <button key={et.id} className="btn"
-              style={{ width: "100%", marginBottom: 8, textAlign: "left", padding: "14px 16px", opacity: 0.85 }}
-              onClick={() => onNewEvent(et.label)}>
-              {et.english
-                ? <><span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
-                   <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
-                : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
-              }
-            </button>
-          ))}
+          {showMore && moreTypes.map(et => renderTypeButton(et))}
         </>
       )}
     </div>
@@ -517,93 +597,6 @@ function HistoryScreen({ onBack, onEditEvent }) {
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-// ===== EventSetupScreen =====
-function EventSetupScreen({ eventType, onStart, onBack }) {
-  const [gemCost, setGemCost] = useState("");
-  const [maxWins, setMaxWins] = useState(7);
-  const [maxLosses, setMaxLosses] = useState(3);
-  const [boxType, setBoxType] = useState(null);
-  const [boxName, setBoxName] = useState("");
-  const presets = [4000, 5000, 6000, 8000];
-  const maxWinsPresets = [4, 7];
-  const maxLossesPresets = [1, 2, 3];
-
-  return (
-    <div className="screen">
-      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
-      <div className="section-label">イベント設定</div>
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>{eventType}</div>
-      <div className="card">
-        <div className="section-label">消費ジェム（Run毎）</div>
-        <input className="input-field" type="number" placeholder="例: 6000" value={gemCost}
-          onChange={e => setGemCost(e.target.value)} />
-        <div className="btn-grid btn-grid-2 mt-8">
-          {presets.map(p => (
-            <button key={p} className={`btn ${gemCost == p ? "btn-selected" : ""}`}
-              onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
-          ))}
-        </div>
-      </div>
-      <div className="card">
-        <div className="section-label">最大勝利数</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {maxWinsPresets.map(n => (
-            <button key={n} className={`btn ${maxWins === n ? "btn-selected" : ""}`}
-              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
-              onClick={() => setMaxWins(n)}>{n}勝</button>
-          ))}
-          <input className="input-field" type="number" min="1" max="20" placeholder="他"
-            style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700, textAlign: "center" }}
-            value={maxWinsPresets.includes(maxWins) ? "" : String(maxWins)}
-            onChange={e => { const v = parseInt(e.target.value); if (v > 0) setMaxWins(v); }} />
-        </div>
-      </div>
-      <div className="card">
-        <div className="section-label">最大敗北数</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {maxLossesPresets.map(n => (
-            <button key={n} className={`btn ${maxLosses === n ? "btn-selected" : ""}`}
-              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
-              onClick={() => setMaxLosses(n)}>{n}敗</button>
-          ))}
-        </div>
-      </div>
-      <div style={{ padding: "8px 4px", marginBottom: 4, fontSize: 12, color: "#aaa", display: "flex", gap: 16 }}>
-        <span>最大試合数: <strong style={{ color: "#7ecfff" }}>{maxWins + maxLosses - 1}</strong></span>
-      </div>
-      <div className="card">
-        <div className="section-label">ボックスプライズの種類（任意）</div>
-        <div className="btn-grid mt-8" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-          <button className={`btn ${boxType === null ? "btn-selected" : ""}`}
-            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-            onClick={() => { setBoxType(null); setBoxName(""); }}>なし</button>
-          <button className={`btn ${boxType === "PB_BOX" ? "btn-selected" : ""}`}
-            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-            onClick={() => setBoxType("PB_BOX")}>🎁 プレイ</button>
-          <button className={`btn ${boxType === "CB_BOX" ? "btn-selected" : ""}`}
-            style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-            onClick={() => setBoxType("CB_BOX")}>✨ コレクター</button>
-        </div>
-        {boxType && (
-          <div className="mt-8">
-            <input className="input-field" type="text"
-              placeholder="例: ストリクスヘイブンの秘密 日本語版"
-              value={boxName} onChange={e => setBoxName(e.target.value)} />
-            <div style={{ fontSize: 11, color: "#ccc", marginTop: 6 }}>
-              換算: {boxType === "PB_BOX" ? "20,000" : "60,000"}ジェム/箱
-            </div>
-          </div>
-        )}
-      </div>
-      <button className="btn-primary mt-16"
-        disabled={!gemCost || isNaN(Number(gemCost))}
-        onClick={() => onStart(Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins)}>
-        イベント開始
-      </button>
     </div>
   );
 }
@@ -1031,7 +1024,6 @@ export default function App() {
     return "home";
   });
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
-  const [selectedEventType, setSelectedEventType] = useState(null);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -1053,11 +1045,9 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const handleNewEvent = (type) => { setSelectedEventType(type); setScreen("setup"); };
-
-  const handleEventStart = (gemCost, boxType, boxName, maxLosses, maxWins) => {
+  const handleNewEvent = (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
     setActiveEvent({
-      type: selectedEventType, gemCost,
+      type, gemCost,
       boxType: boxType || null, boxName: boxName || "",
       date: toJSTDateString(),
       runs: [], notionPageId: null,
@@ -1147,7 +1137,7 @@ export default function App() {
           <div className="header-title">MTG Arena Tracker</div>
           <div className="header-sub">戦績管理</div>
         </div>
-        {activeEvent && screen !== "setup" && (
+        {activeEvent && (
           <div className="status-bar">
             <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
           </div>
@@ -1156,7 +1146,6 @@ export default function App() {
         {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
         {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
         {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-        {screen === "setup" && <EventSetupScreen eventType={selectedEventType} onStart={handleEventStart} onBack={() => setScreen("home")} />}
         {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
         {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
         {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}

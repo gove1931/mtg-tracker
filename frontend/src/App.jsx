@@ -999,7 +999,7 @@ const styles = `
     .pcd-nav-cta { background: #4f46e5; color: #fff; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 
     /* メインコンテンツ */
-    .pcd-main { max-width: 1040px; margin: 0 auto; padding: 36px 32px; }
+    .pcd-main { padding: 36px 48px; }
     .pcd-page-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
     .pcd-page-title { font-size: 22px; font-weight: 700; color: #0f172a; }
     .pcd-page-sub { font-size: 13px; color: #94a3b8; }
@@ -1671,7 +1671,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             </span>
           ))}
         </div>
-        <span className="pcd-nav-cta" onClick={() => setScreen("record")}>＋ 新しいRun</span>
+        <span className="pcd-nav-cta" onClick={() => setScreen(activeEvent ? "run" : "record")}>＋ 新しいRun</span>
       </nav>
 
       <main className="pcd-main">

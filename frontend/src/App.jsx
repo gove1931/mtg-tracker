@@ -969,72 +969,183 @@ const styles = `
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(104,217,164,0.15); border: 1px solid rgba(104,217,164,0.4); border-radius: 10px; color: #68d9a4; font-size: 14px; padding: 12px 24px; white-space: nowrap; z-index: 999; }
   .toast-error { background: rgba(255,128,128,0.12); border-color: rgba(255,128,128,0.35); color: #ff8080; }
 
-  /* ===== PC レイアウト ===== */
-  .pc-layout { display: flex; min-height: 100vh; background: #0a0a0f; }
-  .pc-sidebar { display: none; }
+  /* ===== PC デモ画面 ===== */
+  .pcd-wrap { display: none; }
 
   @media (min-width: 860px) {
-    .pc-layout { justify-content: center; align-items: flex-start; }
+    .mobile-app { display: none; }
 
-    .pc-sidebar {
-      display: flex; flex-direction: column;
-      width: 260px; flex-shrink: 0;
-      padding: 48px 28px 40px;
-      border-right: 1px solid rgba(126,207,255,0.07);
-      min-height: 100vh;
-      position: sticky; top: 0;
-      overflow: hidden;
-      background: rgba(126,207,255,0.015);
+    .pcd-wrap {
+      display: block; min-height: 100vh;
+      background: #f4f6f9;
+      color: #1e293b;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
     }
 
-    .pc-sidebar-logo { margin-bottom: 4px; }
-    .pc-sidebar-title { font-size: 22px; font-weight: 800; color: #7ecfff; letter-spacing: 0.04em; line-height: 1.2; }
-    .pc-sidebar-sub { font-size: 11px; color: #aaa; letter-spacing: 0.12em; margin-top: 6px; text-transform: uppercase; }
-
-    .pc-sidebar-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 24px 0; }
-
-    .pc-sidebar-nav { display: flex; flex-direction: column; gap: 6px; }
-    .pc-nav-btn {
-      display: flex; align-items: center; gap: 10px;
-      width: 100%; padding: 10px 14px;
-      background: transparent; border: 1px solid transparent;
-      border-radius: 8px; color: #aaa; font-size: 13px; cursor: pointer;
-      text-align: left; transition: all 0.15s;
+    /* ナビゲーション */
+    .pcd-nav {
+      display: flex; align-items: center;
+      background: #fff; border-bottom: 1px solid #e2e8f0;
+      padding: 0 40px; height: 60px;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      gap: 40px;
     }
-    .pc-nav-btn:hover { background: rgba(255,255,255,0.04); color: #e0e0e0; }
-    .pc-nav-btn-active { background: rgba(126,207,255,0.08) !important; border-color: rgba(126,207,255,0.2) !important; color: #7ecfff !important; }
+    .pcd-logo { font-size: 17px; font-weight: 700; color: #1e293b; letter-spacing: -0.02em; flex-shrink: 0; }
+    .pcd-nav-links { display: flex; gap: 28px; flex: 1; }
+    .pcd-nav-link { font-size: 13px; color: #64748b; cursor: pointer; padding: 4px 0; border-bottom: 2px solid transparent; transition: color 0.15s; }
+    .pcd-nav-link:hover { color: #1e293b; }
+    .pcd-nav-link-active { color: #1e293b; font-weight: 600; border-bottom-color: #4f46e5; }
+    .pcd-nav-cta { background: #4f46e5; color: #fff; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 
-    .pc-sidebar-event {
-      padding: 14px 16px;
-      background: rgba(126,207,255,0.06);
-      border: 1px solid rgba(126,207,255,0.18);
-      border-radius: 10px;
+    /* メインコンテンツ */
+    .pcd-main { max-width: 1040px; margin: 0 auto; padding: 36px 32px; }
+    .pcd-page-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+    .pcd-page-title { font-size: 22px; font-weight: 700; color: #0f172a; }
+    .pcd-page-sub { font-size: 13px; color: #94a3b8; }
+
+    /* 統計カード */
+    .pcd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+    .pcd-stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 22px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .pcd-stat-val { font-size: 26px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .pcd-stat-val.pos { color: #16a34a; }
+    .pcd-stat-val.neg { color: #dc2626; }
+    .pcd-stat-key { font-size: 11px; color: #94a3b8; font-weight: 500; }
+
+    /* アクションカード */
+    .pcd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 32px; }
+    .pcd-action { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 26px; cursor: pointer; transition: all 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .pcd-action:hover { border-color: #c7d2fe; box-shadow: 0 4px 12px rgba(79,70,229,0.09); }
+    .pcd-action-primary { border-left: 4px solid #4f46e5; }
+    .pcd-action-icon { font-size: 28px; margin-bottom: 10px; }
+    .pcd-action-title { font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 5px; }
+    .pcd-action-desc { font-size: 12px; color: #94a3b8; line-height: 1.5; }
+
+    /* イベント一覧テーブル */
+    .pcd-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .pcd-section-title { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .pcd-section-link { font-size: 12px; color: #4f46e5; cursor: pointer; }
+    .pcd-table { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .pcd-table-head {
+      display: grid; grid-template-columns: 2fr 1fr 1.4fr 0.8fr 1fr;
+      padding: 10px 20px; gap: 12px;
+      background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+      font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;
     }
-    .pc-sidebar-event-label { font-size: 9px; color: #68d9a4; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
-    .pc-sidebar-event-type { font-size: 13px; font-weight: 600; color: #e0e0e0; margin-bottom: 8px; }
-    .pc-sidebar-event-meta { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #aaa; }
-
-    .pc-sidebar-screen-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; }
-
-    .pc-sidebar-glow {
-      position: absolute; bottom: -60px; left: -40px;
-      width: 260px; height: 260px;
-      background: radial-gradient(circle, rgba(126,207,255,0.04) 0%, transparent 70%);
-      pointer-events: none;
+    .pcd-table-row {
+      display: grid; grid-template-columns: 2fr 1fr 1.4fr 0.8fr 1fr;
+      padding: 14px 20px; gap: 12px;
+      border-bottom: 1px solid #f1f5f9; align-items: center;
+      cursor: pointer; transition: background 0.1s;
     }
-
-    .app {
-      flex: 1; max-width: 520px;
-      border-right: 1px solid rgba(126,207,255,0.07);
-    }
-
-    /* ヘッダーはサイドバーがあるので非表示 */
-    .header { display: none; }
-
-    /* トーストをapp内中央に */
-    .toast { left: calc(260px + (100vw - 260px) / 2); }
+    .pcd-table-row:last-child { border-bottom: none; }
+    .pcd-table-row:hover { background: #f8fafc; }
+    .pcd-ev-name { font-size: 13px; font-weight: 500; color: #1e293b; }
+    .pcd-ev-date { font-size: 12px; color: #94a3b8; }
+    .pcd-ev-record { font-size: 12px; color: #475569; }
+    .pcd-ev-wr { color: #f59e0b; font-weight: 600; }
+    .pcd-ev-runs { font-size: 12px; color: #64748b; }
+    .pcd-ev-balance { font-size: 13px; font-weight: 600; }
+    .pcd-ev-balance.pos { color: #16a34a; }
+    .pcd-ev-balance.neg { color: #dc2626; }
   }
 `;
+
+// ===== PCDemo（デモ用静的画面） =====
+const DEMO_EVENTS = [
+  { type: "アリーナダイレクト",               date: "2026/06/15", runs: 3, wins: 19, losses: 5,  balance: 4200  },
+  { type: "プレイイン",                        date: "2026/06/12", runs: 2, wins: 9,  losses: 5,  balance: -6000 },
+  { type: "リミテッドチャンピオンシップ予選",   date: "2026/06/10", runs: 4, wins: 24, losses: 8,  balance: 14600 },
+  { type: "アリーナダイレクト",               date: "2026/06/08", runs: 2, wins: 13, losses: 3,  balance: 3400  },
+];
+
+function PCDemo() {
+  const totalBalance = DEMO_EVENTS.reduce((s, e) => s + e.balance, 0);
+  const totalWins    = DEMO_EVENTS.reduce((s, e) => s + e.wins, 0);
+  const totalLosses  = DEMO_EVENTS.reduce((s, e) => s + e.losses, 0);
+  const winRate      = Math.round(totalWins / (totalWins + totalLosses) * 100);
+  const totalRuns    = DEMO_EVENTS.reduce((s, e) => s + e.runs, 0);
+
+  return (
+    <div className="pcd-wrap">
+      <nav className="pcd-nav">
+        <div className="pcd-logo">⚔ MTG Tracker</div>
+        <div className="pcd-nav-links">
+          <span className="pcd-nav-link pcd-nav-link-active">ホーム</span>
+          <span className="pcd-nav-link">ゲームを記録する</span>
+          <span className="pcd-nav-link">過去の履歴</span>
+          <span className="pcd-nav-link">イベント設定</span>
+        </div>
+        <span className="pcd-nav-cta">＋ 新しいRun</span>
+      </nav>
+
+      <main className="pcd-main">
+        <div className="pcd-page-header">
+          <div className="pcd-page-title">ダッシュボード</div>
+          <div className="pcd-page-sub">2026年6月</div>
+        </div>
+
+        <div className="pcd-stats">
+          <div className="pcd-stat">
+            <div className={`pcd-stat-val ${totalBalance >= 0 ? "pos" : "neg"}`}>
+              {totalBalance >= 0 ? "+" : ""}{totalBalance.toLocaleString()} G
+            </div>
+            <div className="pcd-stat-key">今月のジェム収支</div>
+          </div>
+          <div className="pcd-stat">
+            <div className="pcd-stat-val">{winRate}%</div>
+            <div className="pcd-stat-key">今月の勝率</div>
+          </div>
+          <div className="pcd-stat">
+            <div className="pcd-stat-val">{totalWins + totalLosses}</div>
+            <div className="pcd-stat-key">今月の総対戦数</div>
+          </div>
+          <div className="pcd-stat">
+            <div className="pcd-stat-val">{totalRuns}</div>
+            <div className="pcd-stat-key">今月のRun数</div>
+          </div>
+        </div>
+
+        <div className="pcd-actions">
+          <div className="pcd-action pcd-action-primary">
+            <div className="pcd-action-icon">🎮</div>
+            <div className="pcd-action-title">ゲームを記録する</div>
+            <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
+          </div>
+          <div className="pcd-action">
+            <div className="pcd-action-icon">📊</div>
+            <div className="pcd-action-title">過去の履歴を見る</div>
+            <div className="pcd-action-desc">過去のイベントと戦績を確認</div>
+          </div>
+        </div>
+
+        <div className="pcd-section-header">
+          <div className="pcd-section-title">最近のイベント</div>
+          <span className="pcd-section-link">すべて見る →</span>
+        </div>
+        <div className="pcd-table">
+          <div className="pcd-table-head">
+            <span>イベント</span><span>日付</span><span>成績</span><span>Run数</span><span>ジェム収支</span>
+          </div>
+          {DEMO_EVENTS.map((ev, i) => {
+            const wr = Math.round(ev.wins / (ev.wins + ev.losses) * 100);
+            return (
+              <div key={i} className="pcd-table-row">
+                <span className="pcd-ev-name">{ev.type}</span>
+                <span className="pcd-ev-date">{ev.date}</span>
+                <span className="pcd-ev-record">{ev.wins}勝 {ev.losses}敗 <span className="pcd-ev-wr">{wr}%</span></span>
+                <span className="pcd-ev-runs">{ev.runs} Run</span>
+                <span className={`pcd-ev-balance ${ev.balance >= 0 ? "pos" : "neg"}`}>
+                  {ev.balance >= 0 ? "+" : ""}{ev.balance.toLocaleString()} G
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </main>
+    </div>
+  );
+}
 
 // ===== MAIN APP =====
 export default function App() {
@@ -1159,51 +1270,11 @@ export default function App() {
     }
   };
 
-  const screenLabel = {
-    home: "ホーム", record: "イベント選択", "manage-types": "タイプ管理",
-    history: "履歴", run: "Run記録", summary: "イベント進行中",
-  }[screen] || "";
-
   return (
     <>
       <style>{styles}</style>
-      <div className="pc-layout">
-        <aside className="pc-sidebar">
-          <div className="pc-sidebar-logo">
-            <div className="pc-sidebar-title">MTG Arena</div>
-            <div className="pc-sidebar-title" style={{ color: "#68d9a4" }}>Tracker</div>
-            <div className="pc-sidebar-sub">戦績管理</div>
-          </div>
-          <div className="pc-sidebar-divider" />
-          {activeEvent ? (
-            <div className="pc-sidebar-event">
-              <div className="pc-sidebar-event-label">進行中</div>
-              <div className="pc-sidebar-event-type">{activeEvent.type}</div>
-              <div className="pc-sidebar-event-meta">
-                <span>Run {activeEvent.runs.length}</span>
-                <span>{activeEvent.gemCost.toLocaleString()} G/Run</span>
-              </div>
-            </div>
-          ) : (
-            <div className="pc-sidebar-nav">
-              {[
-                { s: "home",    icon: "🏠", label: "ホーム" },
-                { s: "record",  icon: "🎮", label: "記録する" },
-                { s: "history", icon: "📊", label: "履歴" },
-              ].map(({ s, icon, label }) => (
-                <button key={s}
-                  className={`pc-nav-btn ${screen === s ? "pc-nav-btn-active" : ""}`}
-                  onClick={() => setScreen(s)}>
-                  <span>{icon}</span><span>{label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="pc-sidebar-divider" />
-          <div className="pc-sidebar-screen-label">{screenLabel}</div>
-          <div className="pc-sidebar-glow" />
-        </aside>
-
+      {/* スマホ: 既存のダークテーマ（PC時は非表示） */}
+      <div className="mobile-app">
         <div className="app">
           <div className="bg-glow" />
           <div className="header">
@@ -1224,6 +1295,8 @@ export default function App() {
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
       </div>
+      {/* PC: ライトテーマのデモ画面（スマホ時は非表示） */}
+      <PCDemo />
     </>
   );
 }

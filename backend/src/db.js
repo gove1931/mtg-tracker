@@ -18,7 +18,7 @@ async function getEvents() {
   const { rows } = await pool.query(
     `SELECT id, name, type, to_char(date, 'YYYY-MM-DD') AS date,
             gem_cost, total_runs, total_wins, total_losses, gem_balance, max_losses, max_wins
-     FROM events ORDER BY date DESC, created_at DESC`
+     FROM events WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC`
   );
   return rows.map(rowToEvent);
 }
@@ -35,7 +35,7 @@ async function deleteRun(id) {
 }
 
 async function deleteEvent(id) {
-  await pool.query("DELETE FROM events WHERE id=$1", [id]);
+  await pool.query("UPDATE events SET deleted_at = NOW() WHERE id=$1", [id]);
 }
 
 // ===== 戦績 =====

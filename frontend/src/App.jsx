@@ -610,18 +610,16 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
   const [prizeBoxCount, setPrizeBoxCount] = useState(null);
   const [hasRight, setHasRight] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
-  const [winsInput, setWinsInput] = useState("");
 
-  const isFirstRun = !previousRuns || previousRuns.length === 0;
+  const hasPreviousRuns = previousRuns && previousRuns.length > 0;
 
-  // 過去Runから候補値を導出
-  const winCandidates = isFirstRun ? [] : [...new Set(previousRuns.map(r => r.wins))].sort((a, b) => a - b);
-  const lossCandidates = isFirstRun ? [] : [...new Set(
+  // 過去Runからジェム・敗北の候補値を導出
+  const lossCandidates = hasPreviousRuns ? [...new Set(
     previousRuns.filter(r => r.wins === maxWins && r.losses != null).map(r => r.losses)
-  )].sort((a, b) => a - b);
-  const gemCandidates = isFirstRun ? [] : [...new Set(
-    previousRuns.filter(r => r.prizeType === "ジェム" && r.prizeGem).map(r => r.prizeGem)
-  )].sort((a, b) => a - b);
+  )].sort((a, b) => a - b) : [];
+  const gemCandidates = hasPreviousRuns ? [...new Set(
+    previousRuns.filter(r => r.prizeType === "ジェム" && r.prizeGem > 0).map(r => r.prizeGem)
+  )].sort((a, b) => a - b) : [];
 
   const visiblePrizes = PRIZE_TYPES.filter(pt => {
     if (pt.id === "PB_BOX") return boxType === "PB_BOX";
@@ -638,7 +636,6 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
 
   const handleWins = (n) => {
     setWins(n);
-    setWinsInput(String(n));
     if (n < maxWins) {
       setLosses(maxLosses || 3);
     } else if (maxLosses <= 1) {
@@ -649,7 +646,13 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
     const prev = previousRuns?.find(r => r.wins === n);
     if (prev) {
       setPrizeType(prev.prizeType);
-      setPrizeGem(prev.prizeGem ? String(prev.prizeGem) : "");
+      const gemVal = prev.prizeGem > 0 ? String(prev.prizeGem) : "";
+      // ジェムで値が未設定の場合は候補が1件なら自動選択
+      if (prev.prizeType === "ジェム" && !gemVal && gemCandidates.length === 1) {
+        setPrizeGem(String(gemCandidates[0]));
+      } else {
+        setPrizeGem(gemVal);
+      }
       setPrizeBoxCount(prev.prizeBoxCount || null);
       setHasRight(prev.hasRight || false);
       setAutoFilled(true);
@@ -659,12 +662,8 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
     }
   };
 
-  const handleWinsInput = (raw) => {
-    setWinsInput(raw);
-    const v = parseInt(raw);
-    if (!isNaN(v) && v >= 0 && v <= maxWins) handleWins(v);
-    else if (raw === "") { setWins(null); setLosses(null); }
-  };
+  // 勝利数ボタン列: 0〜maxWins を常に表示
+  const winButtons = Array.from({ length: maxWins + 1 }, (_, n) => n);
 
   return (
     <div className="screen">
@@ -674,56 +673,22 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
       </div>
       <div className="card">
         <div className="section-label">勝利数</div>
-        {isFirstRun ? (
-          <input className="input-field" type="number" min="0" max={maxWins}
-            placeholder={`0〜${maxWins}`} value={winsInput}
-            onChange={e => handleWinsInput(e.target.value)} autoFocus />
-        ) : (
-          <>
-            <div className="wins-grid" style={{ gridTemplateColumns: `repeat(${Math.min(winCandidates.length, 4)}, 1fr)` }}>
-              {winCandidates.map(n => (
-                <button key={n} className={`win-btn ${wins === n ? "win-btn-selected" : ""}`}
-                  onClick={() => handleWins(n)}>{n}</button>
-              ))}
-            </div>
-            <input className="input-field" type="number" min="0" max={maxWins}
-              placeholder="他の勝利数" style={{ marginTop: 8 }}
-              value={wins !== null && !winCandidates.includes(wins) ? String(wins) : ""}
-              onChange={e => handleWinsInput(e.target.value)} />
-          </>
-        )}
+        <div className="wins-grid">
+          {winButtons.map(n => (
+            <button key={n} className={`win-btn ${wins === n ? "win-btn-selected" : ""}`}
+              onClick={() => handleWins(n)}>{n}</button>
+          ))}
+        </div>
       </div>
       {wins === maxWins && maxLosses > 1 && (
         <div className="card">
           <div className="section-label">敗北数（{maxWins}勝時）</div>
-          {isFirstRun ? (
-            <input className="input-field" type="number" min="0" max={maxLosses - 1}
-              placeholder={`0〜${maxLosses - 1}`} value={losses ?? ""}
-              onChange={e => {
-                const v = parseInt(e.target.value);
-                if (!isNaN(v) && v >= 0 && v < maxLosses) setLosses(v);
-                else if (e.target.value === "") setLosses(null);
-              }} />
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: 8 }}>
-                {(lossCandidates.length > 0 ? lossCandidates : Array.from({ length: maxLosses }, (_, n) => n)).map(n => (
-                  <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
-                    style={{ flex: 1 }} onClick={() => setLosses(n)}>{n}</button>
-                ))}
-              </div>
-              {lossCandidates.length > 0 && (
-                <input className="input-field" type="number" min="0" max={maxLosses - 1}
-                  placeholder="他の敗北数" style={{ marginTop: 8 }}
-                  value={losses !== null && !lossCandidates.includes(losses) ? String(losses) : ""}
-                  onChange={e => {
-                    const v = parseInt(e.target.value);
-                    if (!isNaN(v) && v >= 0 && v < maxLosses) setLosses(v);
-                    else if (e.target.value === "") setLosses(null);
-                  }} />
-              )}
-            </>
-          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {(lossCandidates.length > 0 ? lossCandidates : Array.from({ length: maxLosses }, (_, n) => n)).map(n => (
+              <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
+                style={{ flex: 1 }} onClick={() => setLosses(n)}>{n}</button>
+            ))}
+          </div>
         </div>
       )}
       <div className="card">
@@ -764,17 +729,17 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
         </button>
         {prizeType === "ジェム" && (
           <div className="mt-12">
-            <input className="input-field" type="number" placeholder="例: 5400" value={prizeGem}
-              onChange={e => setPrizeGem(e.target.value)} />
-            {!isFirstRun && gemCandidates.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            {gemCandidates.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {gemCandidates.map(p => (
-                  <button key={p} className={`btn ${prizeGem == p ? "btn-selected" : ""}`}
+                  <button key={p} className={`btn ${Number(prizeGem) === p ? "btn-selected" : ""}`}
                     style={{ flex: "0 0 auto", padding: "6px 10px", fontSize: 12 }}
                     onClick={() => setPrizeGem(String(p))}>{p.toLocaleString()}</button>
                 ))}
               </div>
-            )}
+            ) : null}
+            <input className="input-field" type="number" placeholder="例: 5400" value={prizeGem}
+              onChange={e => setPrizeGem(e.target.value)} />
           </div>
         )}
         {(prizeType === "PB_BOX" || prizeType === "CB_BOX") && (

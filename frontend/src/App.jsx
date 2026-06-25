@@ -1815,7 +1815,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             ))}
           </div>
           <div className="pcd-actions">
-            <div className="pcd-action pcd-action-primary" onClick={() => setScreen("record")}>
+            <div className="pcd-action pcd-action-primary" onClick={() => setScreen(activeEvent ? "run" : "record")}>
               <div className="pcd-action-icon">🎮</div>
               <div className="pcd-action-title">ゲームを記録する</div>
               <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
@@ -2073,7 +2073,7 @@ export default function App() {
           )}
           {isRestoringEvent
             ? <div style={{ color: "#ccc", fontSize: 13, padding: "40px 0", textAlign: "center" }}>読み込み中...</div>
-            : screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
+            : screen === "home" && <HomeScreen onRecord={() => setScreen(activeEvent ? "run" : "record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
           {!isRestoringEvent && screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
           {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
           {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}

@@ -38,16 +38,50 @@ const PRIZE_TYPES = [
 ];
 
 // ===== API関数 =====
-async function createEventInNotion(eventType, gemCost, date, maxLosses, maxWins) {
+
+// --- 新規フロー用（即時保存） ---
+async function createEventInDB(eventType, gemCost, date, maxLosses, maxWins, boxType, boxName) {
   const res = await fetch(`${API_URL}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventType, gemCost, date, maxLosses, maxWins }),
+    body: JSON.stringify({ eventType, gemCost, date, maxLosses, maxWins,
+      status: "in_progress", boxType: boxType || null, boxName: boxName || null }),
   });
-  const data = await res.json();
-  return data.id || null;
+  if (!res.ok) throw new Error("イベント作成に失敗しました");
+  return (await res.json()).id;
 }
 
+async function createRunInDB(run, eventId, runIndex) {
+  const res = await fetch(`${API_URL}/api/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      eventPageId: eventId, runIndex,
+      wins: run.wins, losses: run.losses || 0,
+      prizeType: run.prizeType,
+      prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
+      hasRight: run.hasRight || false,
+    }),
+  });
+  if (!res.ok) throw new Error("Run保存に失敗しました");
+  return (await res.json()).id;
+}
+
+async function completeEventInDB(eventId, totalRuns, totalWins, totalLosses, gemBalance) {
+  const res = await fetch(`${API_URL}/api/events/${eventId}/complete`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ totalRuns, totalWins, totalLosses, gemBalance }),
+  });
+  if (!res.ok) throw new Error("イベント完了に失敗しました");
+}
+
+async function fetchInProgressEvent() {
+  const res = await fetch(`${API_URL}/api/events/in-progress`);
+  return res.ok ? await res.json() : null;
+}
+
+// --- 編集モード用（一括保存・従来通り） ---
 async function createRunInNotion(run, eventPageId, runIndex) {
   await fetch(`${API_URL}/api/runs`, {
     method: "POST",
@@ -112,7 +146,7 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
 }
 
 // ===== RecordMenuScreen =====
-function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes }) {
+function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes, isSyncing }) {
   const [showMore, setShowMore] = useState(false);
   const [selectedType, setSelectedType] = useState(null);
   const [gemCost, setGemCost] = useState("");
@@ -208,9 +242,9 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, even
           )}
 
           <button className="btn-primary mt-16"
-            disabled={!gemCost || isNaN(Number(gemCost))}
+            disabled={!gemCost || isNaN(Number(gemCost)) || isSyncing}
             onClick={handleStart}>
-            イベント開始
+            {isSyncing ? "作成中..." : "イベント開始"}
           </button>
         </div>
       )}
@@ -602,7 +636,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns }) {
+function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
@@ -768,11 +802,11 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
         <button className="btn" style={{ flex: 1, padding: "14px", fontSize: 14 }} onClick={onBack}>
           キャンセル
         </button>
-        <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave}
+        <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave || isSyncing}
           onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
             hasRight,
             boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
-          Runを保存
+          {isSyncing ? "保存中..." : "Runを保存"}
         </button>
       </div>
     </div>
@@ -1133,7 +1167,7 @@ const styles = `
 `;
 
 // ===== PCRecordSetup =====
-function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent }) {
+function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent, isSyncing }) {
   const [selectedType, setSelectedType] = useState(null);
   const [gemCost, setGemCost] = useState("");
   const [maxWins, setMaxWins] = useState(7);
@@ -1228,9 +1262,9 @@ function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent }) {
               )}
             </div>
             <button className="pcd-primary-btn" style={{ marginTop: 8 }}
-              disabled={!gemCost || isNaN(Number(gemCost))}
+              disabled={!gemCost || isNaN(Number(gemCost)) || isSyncing}
               onClick={() => onNewEvent(selectedType, Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins)}>
-              イベント開始
+              {isSyncing ? "作成中..." : "イベント開始"}
             </button>
           </div>
         ) : (
@@ -1421,7 +1455,7 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
 }
 
 // ===== PCRunEntry =====
-function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns }) {
+function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
@@ -1536,10 +1570,10 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
             </div>
           )}
           <div style={{height:1,background:"#e2e8f0",margin:"20px 0"}} />
-          <button className="pcd-primary-btn" disabled={!canSave}
+          <button className="pcd-primary-btn" disabled={!canSave || isSyncing}
             onClick={()=>onSave({wins,losses,prizeType,prizeGem:Number(prizeGem)||0,prizeBoxCount,hasRight,
               boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""})}>
-            Runを保存
+            {isSyncing ? "保存中..." : "Runを保存"}
           </button>
         </div>
         {/* 補助情報: これまでのRun履歴 */}
@@ -1654,7 +1688,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
 }
 
 // ===== PCDemo（実データ PC画面） =====
-function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent }) {
+function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent, isRestoringEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -1759,7 +1793,10 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 
       <main className="pcd-main">
         {/* ホーム */}
-        {screen === "home" && <>
+        {screen === "home" && isRestoringEvent && (
+          <div className="pcd-loading">読み込み中...</div>
+        )}
+        {screen === "home" && !isRestoringEvent && <>
           <div className="pcd-page-header">
             <div className="pcd-page-title">ダッシュボード</div>
             <div className="pcd-page-sub">{yr}年{parseInt(mo)}月</div>
@@ -1803,6 +1840,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             onNewEvent={onNewEvent}
             setScreen={setScreen}
             activeEvent={activeEvent}
+            isSyncing={isSyncing}
           />
         )}
 
@@ -1838,6 +1876,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             maxWins={activeEvent.maxWins || 7}
             maxLosses={activeEvent.maxLosses || 3}
             previousRuns={activeEvent.runs}
+            isSyncing={isSyncing}
           />
         )}
 
@@ -1868,22 +1907,9 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 
 // ===== MAIN APP =====
 export default function App() {
-  const [activeEvent, setActiveEvent] = useState(() => {
-    try {
-      const saved = localStorage.getItem("mtg-activeEvent");
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
-  const [screen, setScreen] = useState(() => {
-    try {
-      const saved = localStorage.getItem("mtg-activeEvent");
-      if (saved) {
-        const ev = JSON.parse(saved);
-        return ev.isEditing ? "home" : "summary";
-      }
-    } catch {}
-    return "home";
-  });
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [screen, setScreen] = useState("home");
+  const [isRestoringEvent, setIsRestoringEvent] = useState(true);
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1894,34 +1920,74 @@ export default function App() {
     saveEventTypesToStorage(types);
   };
 
+  // 起動時: DB から in_progress イベントを復元
   useEffect(() => {
-    if (activeEvent) {
-      localStorage.setItem("mtg-activeEvent", JSON.stringify(activeEvent));
-    } else {
-      localStorage.removeItem("mtg-activeEvent");
-    }
-  }, [activeEvent]);
+    const restore = async () => {
+      try {
+        localStorage.removeItem("mtg-activeEvent");
+        const event = await fetchInProgressEvent();
+        if (event) {
+          const runsRes = await fetch(`${API_URL}/api/runs/${event.id}`);
+          const runs = runsRes.ok ? await runsRes.json() : [];
+          setActiveEvent({
+            type: event.type, gemCost: event.gemCost,
+            boxType: event.boxType || null, boxName: event.boxName || "",
+            date: event.date, runs,
+            maxLosses: event.maxLosses || 3, maxWins: event.maxWins || 7,
+            eventId: event.id,
+          });
+        }
+      } catch {}
+      finally { setIsRestoringEvent(false); }
+    };
+    restore();
+  }, []);
 
   const showToast = useCallback((msg, isError = false) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const handleNewEvent = (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
-    setActiveEvent({
-      type, gemCost,
-      boxType: boxType || null, boxName: boxName || "",
-      date: toJSTDateString(),
-      runs: [], notionPageId: null,
-      maxLosses: maxLosses || 3,
-      maxWins: maxWins || 7,
-    });
-    setScreen("summary");
+  const handleNewEvent = async (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
+    setIsSyncing(true);
+    try {
+      const eventId = await createEventInDB(
+        type, gemCost, toJSTDateString(), maxLosses || 3, maxWins || 7,
+        boxType || null, boxName || null
+      );
+      setActiveEvent({
+        type, gemCost,
+        boxType: boxType || null, boxName: boxName || "",
+        date: toJSTDateString(),
+        runs: [],
+        maxLosses: maxLosses || 3,
+        maxWins: maxWins || 7,
+        eventId,
+      });
+      setScreen("summary");
+    } catch (e) {
+      showToast("イベントの作成に失敗しました", true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const handleSaveRun = (runData) => {
-    setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
-    setScreen("summary");
+  const handleSaveRun = async (runData) => {
+    if (activeEvent?.isEditing) {
+      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
+      setScreen("summary");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const runId = await createRunInDB(runData, activeEvent.eventId, activeEvent.runs.length + 1);
+      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, { ...runData, id: runId }] }));
+      setScreen("summary");
+    } catch (e) {
+      showToast("Runの保存に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleDeleteRunFromEdit = (run) => {
@@ -1974,21 +2040,19 @@ export default function App() {
         await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
         showToast("✓ 更新しました！");
       } else {
-        const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3, activeEvent.maxWins || 7);
-        if (eventPageId) {
-          for (let i = 0; i < activeEvent.runs.length; i++)
-            await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
-          await updateEventInNotion(eventPageId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
-          showToast("✓ 保存しました！");
-        } else { showToast("保存に失敗しました", true); }
+        // 新規フロー: runs は既に DB 保存済み。complete エンドポイントで統計更新のみ
+        await completeEventInDB(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
+        showToast("✓ イベントを完了しました！");
       }
-    } catch (e) { showToast("エラーが発生しました", true); }
-    finally {
+    } catch (e) {
+      showToast("エラーが発生しました", true);
       setIsSyncing(false);
-      setActiveEvent(null);
-      setRefreshKey(k => k + 1);
-      setScreen(isEditing ? "history" : "home");
+      return; // activeEvent をクリアしない（in_progress のまま維持）
     }
+    setIsSyncing(false);
+    setActiveEvent(null);
+    setRefreshKey(k => k + 1);
+    setScreen(isEditing ? "history" : "home");
   };
 
   return (
@@ -2007,11 +2071,13 @@ export default function App() {
               <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
             </div>
           )}
-          {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
-          {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
+          {isRestoringEvent
+            ? <div style={{ color: "#ccc", fontSize: 13, padding: "40px 0", textAlign: "center" }}>読み込み中...</div>
+            : screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
+          {!isRestoringEvent && screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
           {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
           {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
+          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} isSyncing={isSyncing} />}
           {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
@@ -2023,7 +2089,7 @@ export default function App() {
         onNewEvent={handleNewEvent} onSaveRun={handleSaveRun}
         onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
         isSyncing={isSyncing} onSaveEventTypes={handleSaveEventTypes}
-        onEditEvent={handleEditEvent}
+        onEditEvent={handleEditEvent} isRestoringEvent={isRestoringEvent}
       />
     </>
   );

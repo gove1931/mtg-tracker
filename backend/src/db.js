@@ -4,12 +4,12 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // ===== イベント =====
 
-async function createEvent({ eventType, gemCost, date, maxLosses, maxWins }) {
+async function createEvent({ eventType, gemCost, date, maxLosses, maxWins, status = "completed", boxType = null, boxName = null }) {
   const name = `${date} ${eventType}`;
   const { rows } = await pool.query(
-    `INSERT INTO events (name, type, date, gem_cost, gem_balance, max_losses, max_wins)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name`,
-    [name, eventType, date, gemCost, -gemCost, maxLosses ?? 3, maxWins ?? 7]
+    `INSERT INTO events (name, type, date, gem_cost, gem_balance, max_losses, max_wins, status, box_type, box_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, name`,
+    [name, eventType, date, gemCost, -gemCost, maxLosses ?? 3, maxWins ?? 7, status, boxType, boxName]
   );
   return { id: rows[0].id, name: rows[0].name };
 }
@@ -18,14 +18,31 @@ async function getEvents() {
   const { rows } = await pool.query(
     `SELECT id, name, type, to_char(date, 'YYYY-MM-DD') AS date,
             gem_cost, total_runs, total_wins, total_losses, gem_balance, max_losses, max_wins
-     FROM events WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC`
+     FROM events WHERE deleted_at IS NULL AND status = 'completed' ORDER BY date DESC, created_at DESC`
   );
   return rows.map(rowToEvent);
+}
+
+async function getInProgressEvent() {
+  const { rows } = await pool.query(
+    `SELECT id, name, type, to_char(date, 'YYYY-MM-DD') AS date,
+            gem_cost, max_losses, max_wins, box_type, box_name
+     FROM events WHERE status = 'in_progress' AND deleted_at IS NULL
+     ORDER BY created_at DESC LIMIT 1`
+  );
+  return rows.length ? rowToEvent(rows[0]) : null;
 }
 
 async function updateEvent(id, { totalRuns, totalWins, totalLosses, gemBalance }) {
   await pool.query(
     `UPDATE events SET total_runs=$1, total_wins=$2, total_losses=$3, gem_balance=$4 WHERE id=$5`,
+    [totalRuns, totalWins, totalLosses ?? 0, gemBalance, id]
+  );
+}
+
+async function completeEvent(id, { totalRuns, totalWins, totalLosses, gemBalance }) {
+  await pool.query(
+    `UPDATE events SET status='completed', total_runs=$1, total_wins=$2, total_losses=$3, gem_balance=$4 WHERE id=$5`,
     [totalRuns, totalWins, totalLosses ?? 0, gemBalance, id]
   );
 }
@@ -73,6 +90,8 @@ function rowToEvent(r) {
     gemBalance:  r.gem_balance,
     maxLosses:   r.max_losses,
     maxWins:     r.max_wins,
+    boxType:     r.box_type  ?? null,
+    boxName:     r.box_name  ?? null,
   };
 }
 
@@ -88,4 +107,4 @@ function rowToRun(r) {
   };
 }
 
-module.exports = { createEvent, getEvents, updateEvent, createRun, getRunsByEvent, deleteRun, deleteEvent };
+module.exports = { createEvent, getEvents, getInProgressEvent, updateEvent, completeEvent, createRun, getRunsByEvent, deleteRun, deleteEvent };

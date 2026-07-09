@@ -10,15 +10,18 @@ const toJSTDateString = () => {
 };
 
 const DEFAULT_EVENT_TYPES = [
-  { id: "ev-1", label: "アリーナダイレクト", english: "Arena Direct" },
-  { id: "ev-2", label: "プレイイン", english: "Play-In" },
-  { id: "ev-3", label: "リミテッドチャンピオンシップ予選", english: "Limited Championship Qualifier" },
+  { id: "ev-1", label: "アリーナダイレクト", english: "Arena Direct", gemCost: 4000, maxWins: 7, maxLosses: 3, boxType: null, boxName: "" },
+  { id: "ev-2", label: "プレイイン", english: "Play-In", gemCost: 4000, maxWins: 4, maxLosses: 1, boxType: null, boxName: "" },
+  { id: "ev-3", label: "リミテッドチャンピオンシップ予選", english: "Limited Championship Qualifier", gemCost: 6000, maxWins: 7, maxLosses: 3, boxType: null, boxName: "" },
 ];
 
 function loadEventTypes() {
   try {
     const saved = localStorage.getItem("mtg-eventTypes");
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const types = JSON.parse(saved);
+      return types.map(t => ({ gemCost: 0, maxWins: 7, maxLosses: 3, boxType: null, boxName: "", ...t }));
+    }
   } catch {}
   return DEFAULT_EVENT_TYPES;
 }
@@ -38,16 +41,50 @@ const PRIZE_TYPES = [
 ];
 
 // ===== API関数 =====
-async function createEventInNotion(eventType, gemCost, date, maxLosses, maxWins) {
+
+// --- 新規フロー用（即時保存） ---
+async function createEventInDB(eventType, gemCost, date, maxLosses, maxWins, boxType, boxName) {
   const res = await fetch(`${API_URL}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventType, gemCost, date, maxLosses, maxWins }),
+    body: JSON.stringify({ eventType, gemCost, date, maxLosses, maxWins,
+      status: "in_progress", boxType: boxType || null, boxName: boxName || null }),
   });
-  const data = await res.json();
-  return data.id || null;
+  if (!res.ok) throw new Error("イベント作成に失敗しました");
+  return (await res.json()).id;
 }
 
+async function createRunInDB(run, eventId, runIndex) {
+  const res = await fetch(`${API_URL}/api/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      eventPageId: eventId, runIndex,
+      wins: run.wins, losses: run.losses || 0,
+      prizeType: run.prizeType,
+      prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
+      hasRight: run.hasRight || false,
+    }),
+  });
+  if (!res.ok) throw new Error("Run保存に失敗しました");
+  return (await res.json()).id;
+}
+
+async function completeEventInDB(eventId, totalRuns, totalWins, totalLosses, gemBalance) {
+  const res = await fetch(`${API_URL}/api/events/${eventId}/complete`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ totalRuns, totalWins, totalLosses, gemBalance }),
+  });
+  if (!res.ok) throw new Error("イベント完了に失敗しました");
+}
+
+async function fetchInProgressEvent() {
+  const res = await fetch(`${API_URL}/api/events/in-progress`);
+  return res.ok ? await res.json() : null;
+}
+
+// --- 編集モード用（一括保存・従来通り） ---
 async function createRunInNotion(run, eventPageId, runIndex) {
   await fetch(`${API_URL}/api/runs`, {
     method: "POST",
@@ -112,110 +149,35 @@ function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
 }
 
 // ===== RecordMenuScreen =====
-function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes }) {
+function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes, isSyncing }) {
   const [showMore, setShowMore] = useState(false);
-  const [selectedType, setSelectedType] = useState(null);
-  const [gemCost, setGemCost] = useState("");
-  const [maxWins, setMaxWins] = useState(7);
-  const [maxLosses, setMaxLosses] = useState(3);
-  const [boxType, setBoxType] = useState(null);
-  const [boxName, setBoxName] = useState("");
   const mainTypes = eventTypes.slice(0, 5);
   const moreTypes = eventTypes.slice(5);
-  const gemPresets = [4000, 5000, 6000, 8000];
-  const maxWinsPresets = [4, 7];
-  const maxLossesPresets = [1, 2, 3];
 
-  const handleSelectType = (label) => {
-    if (selectedType === label) { setSelectedType(null); return; }
-    setSelectedType(label);
-    setGemCost(""); setMaxWins(7); setMaxLosses(3); setBoxType(null); setBoxName("");
+  const renderTypeButton = (et) => {
+    const hasConfig = et.gemCost > 0;
+    return (
+      <div key={et.id} style={{ marginBottom: 8 }}>
+        <button className="btn" style={{ width: "100%", textAlign: "left", padding: "14px 16px" }}
+          disabled={isSyncing}
+          onClick={() => onNewEvent(et.label, et.gemCost || 0, et.boxType || null, et.boxName || "", et.maxLosses || 3, et.maxWins || 7)}>
+          {et.english
+            ? <>
+                <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 2 }}>{et.english}</span>
+                <span style={{ fontSize: 11, color: "#bbb", display: "block", marginBottom: 4 }}>{et.label}</span>
+              </>
+            : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700, display: "block", marginBottom: 4 }}>{et.label}</span>
+          }
+          <div style={{ fontSize: 11, color: hasConfig ? "#888" : "#ff8080" }}>
+            {hasConfig
+              ? `${et.gemCost.toLocaleString()}G · 最大 ${et.maxWins || 7}勝 ${et.maxLosses || 3}敗${et.boxType ? ` · ${et.boxType === "PB_BOX" ? "🎁 PB" : "✨ CB"}` : ""}`
+              : "⚙ ジェムコストを設定してください（⚙ 管理から設定）"
+            }
+          </div>
+        </button>
+      </div>
+    );
   };
-
-  const handleStart = () => {
-    onNewEvent(selectedType, Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins);
-  };
-
-  const renderTypeButton = (et) => (
-    <div key={et.id} style={{ marginBottom: 8 }}>
-      <button className={`btn ${selectedType === et.label ? "btn-selected" : ""}`}
-        style={{ width: "100%", textAlign: "left", padding: "14px 16px" }}
-        onClick={() => handleSelectType(et.label)}>
-        {et.english
-          ? <><span style={{ fontSize: 13, color: selectedType === et.label ? "#7ecfff" : "#7ecfff", fontWeight: 700, display: "block", marginBottom: 3 }}>{et.english}</span>
-             <span style={{ fontSize: 11, color: "#bbb" }}>{et.label}</span></>
-          : <span style={{ fontSize: 13, color: "#7ecfff", fontWeight: 700 }}>{et.label}</span>
-        }
-      </button>
-      {selectedType === et.label && (
-        <div className="card" style={{ margin: "4px 0 0", borderColor: "rgba(126,207,255,0.2)" }}>
-          <div className="section-label">消費ジェム（Run毎）</div>
-          <input className="input-field" type="number" placeholder="例: 6000" value={gemCost}
-            onChange={e => setGemCost(e.target.value)} autoFocus />
-          <div className="btn-grid btn-grid-2 mt-8">
-            {gemPresets.map(p => (
-              <button key={p} className={`btn ${gemCost == p ? "btn-selected" : ""}`}
-                onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
-            ))}
-          </div>
-
-          <div className="section-label" style={{ marginTop: 14 }}>最大勝利数</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {maxWinsPresets.map(n => (
-              <button key={n} className={`btn ${maxWins === n ? "btn-selected" : ""}`}
-                style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
-                onClick={() => setMaxWins(n)}>{n}勝</button>
-            ))}
-            <input className="input-field" type="number" min="1" max="20" placeholder="他"
-              style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700, textAlign: "center" }}
-              value={maxWinsPresets.includes(maxWins) ? "" : String(maxWins)}
-              onChange={e => { const v = parseInt(e.target.value); if (v > 0) setMaxWins(v); }} />
-          </div>
-
-          <div className="section-label" style={{ marginTop: 14 }}>最大敗北数</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {maxLossesPresets.map(n => (
-              <button key={n} className={`btn ${maxLosses === n ? "btn-selected" : ""}`}
-                style={{ flex: 1, padding: "12px", fontSize: 15, fontWeight: 700 }}
-                onClick={() => setMaxLosses(n)}>{n}敗</button>
-            ))}
-          </div>
-          <div style={{ fontSize: 12, color: "#aaa", marginTop: 6 }}>
-            最大試合数: <strong style={{ color: "#7ecfff" }}>{maxWins + maxLosses - 1}</strong>
-          </div>
-
-          <div className="section-label" style={{ marginTop: 14 }}>ボックスプライズの種類（任意）</div>
-          <div className="btn-grid mt-8" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-            <button className={`btn ${boxType === null ? "btn-selected" : ""}`}
-              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-              onClick={() => { setBoxType(null); setBoxName(""); }}>なし</button>
-            <button className={`btn ${boxType === "PB_BOX" ? "btn-selected" : ""}`}
-              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-              onClick={() => setBoxType("PB_BOX")}>🎁 プレイ</button>
-            <button className={`btn ${boxType === "CB_BOX" ? "btn-selected" : ""}`}
-              style={{ fontSize: 13, padding: "10px 4px", whiteSpace: "nowrap" }}
-              onClick={() => setBoxType("CB_BOX")}>✨ コレクター</button>
-          </div>
-          {boxType && (
-            <div className="mt-8">
-              <input className="input-field" type="text"
-                placeholder="例: ストリクスヘイブンの秘密 日本語版"
-                value={boxName} onChange={e => setBoxName(e.target.value)} />
-              <div style={{ fontSize: 11, color: "#ccc", marginTop: 6 }}>
-                換算: {boxType === "PB_BOX" ? "20,000" : "60,000"}ジェム/箱
-              </div>
-            </div>
-          )}
-
-          <button className="btn-primary mt-16"
-            disabled={!gemCost || isNaN(Number(gemCost))}
-            onClick={handleStart}>
-            イベント開始
-          </button>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div className="screen">
@@ -237,6 +199,7 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, even
         <div className="section-label" style={{ marginBottom: 0 }}>新しいイベント</div>
         <button className="btn" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onManageTypes}>⚙ 管理</button>
       </div>
+      {isSyncing && <div style={{ textAlign: "center", color: "#7ecfff", fontSize: 13, marginBottom: 12, padding: "8px", background: "rgba(126,207,255,0.06)", borderRadius: 8 }}>作成中...</div>}
       {mainTypes.map(et => renderTypeButton(et))}
       {moreTypes.length > 0 && (
         <>
@@ -258,40 +221,99 @@ function EventTypeManagerScreen({ eventTypes, onSave, onBack }) {
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editEnglish, setEditEnglish] = useState("");
+  const [editGemCost, setEditGemCost] = useState("");
+  const [editMaxWins, setEditMaxWins] = useState(7);
+  const [editMaxLosses, setEditMaxLosses] = useState(3);
+  const [editBoxType, setEditBoxType] = useState(null);
+  const [editBoxName, setEditBoxName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newEnglish, setNewEnglish] = useState("");
+  const [newGemCost, setNewGemCost] = useState("");
+  const [newMaxWins, setNewMaxWins] = useState(7);
+  const [newMaxLosses, setNewMaxLosses] = useState(3);
+  const [newBoxType, setNewBoxType] = useState(null);
+  const [newBoxName, setNewBoxName] = useState("");
 
-  const moveUp = (i) => {
-    if (i === 0) return;
-    const next = [...types];
-    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-    setTypes(next);
+  const gemPresets = [4000, 5000, 6000, 8000];
+  const maxWinsPresets = [4, 7];
+  const maxLossesPresets = [1, 2, 3];
+
+  const moveUp = (i) => { if (i === 0) return; const next = [...types]; [next[i-1],next[i]]=[next[i],next[i-1]]; setTypes(next); };
+  const moveDown = (i) => { if (i===types.length-1) return; const next=[...types]; [next[i],next[i+1]]=[next[i+1],next[i]]; setTypes(next); };
+
+  const startEdit = (t) => {
+    setEditingId(t.id); setEditLabel(t.label); setEditEnglish(t.english||"");
+    setEditGemCost(String(t.gemCost||"")); setEditMaxWins(t.maxWins||7); setEditMaxLosses(t.maxLosses||3);
+    setEditBoxType(t.boxType||null); setEditBoxName(t.boxName||"");
   };
-
-  const moveDown = (i) => {
-    if (i === types.length - 1) return;
-    const next = [...types];
-    [next[i], next[i + 1]] = [next[i + 1], next[i]];
-    setTypes(next);
-  };
-
-  const startEdit = (t) => { setEditingId(t.id); setEditLabel(t.label); setEditEnglish(t.english || ""); };
 
   const saveEdit = () => {
-    setTypes(prev => prev.map(t => t.id === editingId ? { ...t, label: editLabel.trim(), english: editEnglish.trim() } : t));
+    setTypes(prev => prev.map(t => t.id===editingId ? {
+      ...t, label:editLabel.trim(), english:editEnglish.trim(),
+      gemCost:Number(editGemCost)||0, maxWins:editMaxWins, maxLosses:editMaxLosses,
+      boxType:editBoxType, boxName:editBoxType?editBoxName.trim():"",
+    } : t));
     setEditingId(null);
   };
 
   const handleDelete = (id) => setTypes(prev => prev.filter(t => t.id !== id));
 
+  const resetNew = () => { setNewLabel(""); setNewEnglish(""); setNewGemCost(""); setNewMaxWins(7); setNewMaxLosses(3); setNewBoxType(null); setNewBoxName(""); };
+
   const handleAdd = () => {
     if (!newLabel.trim()) return;
-    setTypes(prev => [...prev, { id: `ev-${Date.now()}`, label: newLabel.trim(), english: newEnglish.trim() }]);
-    setNewLabel(""); setNewEnglish(""); setShowAdd(false);
+    setTypes(prev => [...prev, {
+      id:`ev-${Date.now()}`, label:newLabel.trim(), english:newEnglish.trim(),
+      gemCost:Number(newGemCost)||0, maxWins:newMaxWins, maxLosses:newMaxLosses,
+      boxType:newBoxType, boxName:newBoxType?newBoxName.trim():"",
+    }]);
+    resetNew(); setShowAdd(false);
   };
 
   const handleSave = () => { onSave(types); onBack(); };
+
+  const renderConfigFields = (gemCost, setGemCost, maxWins, setMaxWins, maxLosses, setMaxLosses, boxType, setBoxType, boxName, setBoxName) => (
+    <>
+      <div className="section-label" style={{ marginTop: 14 }}>消費ジェム（Run毎）</div>
+      <div className="btn-grid mt-8" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+        {gemPresets.map(p => (
+          <button key={p} className={`btn ${Number(gemCost)===p?"btn-selected":""}`}
+            style={{ fontSize: 12 }} onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
+        ))}
+      </div>
+      <input className="input-field" type="number" placeholder="例: 6000" value={gemCost}
+        onChange={e => setGemCost(e.target.value)} style={{ marginTop: 8 }} />
+      <div className="section-label" style={{ marginTop: 14 }}>最大勝利数</div>
+      <div style={{ display:"flex", gap:8 }}>
+        {maxWinsPresets.map(n => (
+          <button key={n} className={`btn ${maxWins===n?"btn-selected":""}`} style={{ flex:1 }} onClick={() => setMaxWins(n)}>{n}勝</button>
+        ))}
+        <input className="input-field" type="number" min="1" max="20" placeholder="他"
+          style={{ flex:1, padding:"10px", textAlign:"center" }}
+          value={maxWinsPresets.includes(maxWins)?"":String(maxWins)}
+          onChange={e => { const v=parseInt(e.target.value); if(v>0) setMaxWins(v); }} />
+      </div>
+      <div className="section-label" style={{ marginTop: 14 }}>最大敗北数</div>
+      <div style={{ display:"flex", gap:8 }}>
+        {maxLossesPresets.map(n => (
+          <button key={n} className={`btn ${maxLosses===n?"btn-selected":""}`} style={{ flex:1 }} onClick={() => setMaxLosses(n)}>{n}敗</button>
+        ))}
+      </div>
+      <div className="section-label" style={{ marginTop: 14 }}>ボックスプライズ（任意）</div>
+      <div style={{ display:"flex", gap:8, marginTop:8 }}>
+        {[{k:null,l:"なし"},{k:"PB_BOX",l:"🎁 PB"},{k:"CB_BOX",l:"✨ CB"}].map(o => (
+          <button key={String(o.k)} className={`btn ${boxType===o.k?"btn-selected":""}`}
+            style={{ flex:1, fontSize:12 }}
+            onClick={() => { setBoxType(o.k); if(!o.k) setBoxName(""); }}>{o.l}</button>
+        ))}
+      </div>
+      {boxType && (
+        <input className="input-field" type="text" placeholder="例: ストリクスヘイブンの秘密"
+          value={boxName} onChange={e => setBoxName(e.target.value)} style={{ marginTop:8 }} />
+      )}
+    </>
+  );
 
   return (
     <div className="screen">
@@ -307,7 +329,8 @@ function EventTypeManagerScreen({ eventTypes, onSave, onBack }) {
                 placeholder="イベント名" style={{ marginBottom: 8 }} autoFocus />
               <input className="input-field" value={editEnglish} onChange={e => setEditEnglish(e.target.value)}
                 placeholder="英語名（任意）" style={{ marginBottom: 8 }} />
-              <div style={{ display: "flex", gap: 8 }}>
+              {renderConfigFields(editGemCost, setEditGemCost, editMaxWins, setEditMaxWins, editMaxLosses, setEditMaxLosses, editBoxType, setEditBoxType, editBoxName, setEditBoxName)}
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                 <button className="btn" style={{ flex: 1 }} onClick={() => setEditingId(null)}>キャンセル</button>
                 <button className="btn-primary" style={{ flex: 2, padding: "10px" }} onClick={saveEdit} disabled={!editLabel.trim()}>保存</button>
               </div>
@@ -315,18 +338,21 @@ function EventTypeManagerScreen({ eventTypes, onSave, onBack }) {
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
-                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i === 0 ? 0.3 : 1 }}
-                  onClick={() => moveUp(i)} disabled={i === 0}>↑</button>
-                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i === types.length - 1 ? 0.3 : 1 }}
-                  onClick={() => moveDown(i)} disabled={i === types.length - 1}>↓</button>
+                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i===0?0.3:1 }}
+                  onClick={() => moveUp(i)} disabled={i===0}>↑</button>
+                <button className="btn" style={{ padding: "3px 7px", fontSize: 11, opacity: i===types.length-1?0.3:1 }}
+                  onClick={() => moveDown(i)} disabled={i===types.length-1}>↓</button>
               </div>
-              <div style={{ flex: 1, padding: "10px 14px", background: "rgba(255,255,255,0.03)", border: `1px solid ${i < 5 ? "rgba(126,207,255,0.15)" : "rgba(255,255,255,0.07)"}`, borderRadius: 8 }}>
-                <div style={{ fontSize: 13, color: i < 5 ? "#7ecfff" : "#bbb", fontWeight: 600 }}>{t.english || t.label}</div>
-                {t.english && <div style={{ fontSize: 11, color: "#999", marginTop: 1 }}>{t.label}</div>}
-                {i === 4 && <div style={{ fontSize: 9, color: "#68d9a4", marginTop: 3 }}>↑ ここまでメイン表示</div>}
+              <div style={{ flex:1, padding:"10px 14px", background:"rgba(255,255,255,0.03)", border:`1px solid ${i<5?"rgba(126,207,255,0.15)":"rgba(255,255,255,0.07)"}`, borderRadius:8 }}>
+                <div style={{ fontSize:13, color:i<5?"#7ecfff":"#bbb", fontWeight:600 }}>{t.english||t.label}</div>
+                {t.english && <div style={{ fontSize:11, color:"#999", marginTop:1 }}>{t.label}</div>}
+                <div style={{ fontSize:11, color:t.gemCost?"#aaa":"#ff8080", marginTop:3 }}>
+                  {t.gemCost?`${t.gemCost.toLocaleString()}G · ${t.maxWins||7}勝/${t.maxLosses||3}敗`:"⚙ 未設定"}
+                </div>
+                {i===4 && <div style={{ fontSize:9, color:"#68d9a4", marginTop:3 }}>↑ ここまでメイン表示</div>}
               </div>
-              <button className="btn" style={{ padding: "8px 10px", fontSize: 12, flexShrink: 0 }} onClick={() => startEdit(t)}>編集</button>
-              <button className="btn" style={{ padding: "8px 10px", fontSize: 12, color: "#ff8080", borderColor: "rgba(255,128,128,0.3)", flexShrink: 0 }}
+              <button className="btn" style={{ padding:"8px 10px", fontSize:12, flexShrink:0 }} onClick={() => startEdit(t)}>編集</button>
+              <button className="btn" style={{ padding:"8px 10px", fontSize:12, color:"#ff8080", borderColor:"rgba(255,128,128,0.3)", flexShrink:0 }}
                 onClick={() => handleDelete(t.id)}>✕</button>
             </div>
           )}
@@ -340,13 +366,14 @@ function EventTypeManagerScreen({ eventTypes, onSave, onBack }) {
             placeholder="イベント名" style={{ marginBottom: 8 }} autoFocus />
           <input className="input-field" value={newEnglish} onChange={e => setNewEnglish(e.target.value)}
             placeholder="英語名（任意）" style={{ marginBottom: 8 }} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" style={{ flex: 1 }} onClick={() => { setShowAdd(false); setNewLabel(""); setNewEnglish(""); }}>キャンセル</button>
-            <button className="btn-primary" style={{ flex: 2, padding: "10px" }} onClick={handleAdd} disabled={!newLabel.trim()}>追加</button>
+          {renderConfigFields(newGemCost, setNewGemCost, newMaxWins, setNewMaxWins, newMaxLosses, setNewMaxLosses, newBoxType, setNewBoxType, newBoxName, setNewBoxName)}
+          <div style={{ display:"flex", gap:8, marginTop:16 }}>
+            <button className="btn" style={{ flex:1 }} onClick={() => { setShowAdd(false); resetNew(); }}>キャンセル</button>
+            <button className="btn-primary" style={{ flex:2, padding:"10px" }} onClick={handleAdd} disabled={!newLabel.trim()}>追加</button>
           </div>
         </div>
       ) : (
-        <button className="btn" style={{ width: "100%", marginTop: 4, padding: "12px", color: "#68d9a4", borderColor: "rgba(104,217,164,0.3)" }}
+        <button className="btn" style={{ width:"100%", marginTop:4, padding:"12px", color:"#68d9a4", borderColor:"rgba(104,217,164,0.3)" }}
           onClick={() => setShowAdd(true)}>+ イベントタイプを追加</button>
       )}
 
@@ -602,7 +629,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns }) {
+function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
@@ -768,11 +795,11 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
         <button className="btn" style={{ flex: 1, padding: "14px", fontSize: 14 }} onClick={onBack}>
           キャンセル
         </button>
-        <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave}
+        <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave || isSyncing}
           onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
             hasRight,
             boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
-          Runを保存
+          {isSyncing ? "保存中..." : "Runを保存"}
         </button>
       </div>
     </div>
@@ -1133,23 +1160,7 @@ const styles = `
 `;
 
 // ===== PCRecordSetup =====
-function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent }) {
-  const [selectedType, setSelectedType] = useState(null);
-  const [gemCost, setGemCost] = useState("");
-  const [maxWins, setMaxWins] = useState(7);
-  const [maxLosses, setMaxLosses] = useState(3);
-  const [boxType, setBoxType] = useState(null);
-  const [boxName, setBoxName] = useState("");
-  const gemPresets = [4000, 5000, 6000, 8000];
-  const maxWinsPresets = [4, 7];
-  const maxLossesPresets = [1, 2, 3];
-
-  const handleSelectType = (label) => {
-    if (selectedType === label) { setSelectedType(null); return; }
-    setSelectedType(label);
-    setGemCost(""); setMaxWins(7); setMaxLosses(3); setBoxType(null); setBoxName("");
-  };
-
+function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent, isSyncing }) {
   return (
     <div>
       <div className="pcd-page-header">
@@ -1161,97 +1172,30 @@ function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent }) {
           <button onClick={() => setScreen("summary")}>続きから記録する →</button>
         </div>
       )}
-      <div className="pcd-form-2col">
-        {/* Left: type list */}
-        <div>
-          <span className="pcd-form-label">イベントタイプ</span>
-          <div className="pcd-type-list">
-            {eventTypes.map(et => (
-              <button key={et.id}
-                className={`pcd-type-btn ${selectedType === et.label ? "pcd-type-btn-active" : ""}`}
-                onClick={() => handleSelectType(et.label)}>
-                <div className="pcd-type-name">{et.english || et.label}</div>
-                {et.english && <div className="pcd-type-sub">{et.label}</div>}
-              </button>
-            ))}
-          </div>
-          <button className="pcd-manage-link" onClick={() => setScreen("manage-types")}>⚙ イベントタイプを管理</button>
+      {isSyncing && (
+        <div style={{ marginBottom: 16, color: "#4f46e5", fontSize: 13, padding: "12px 16px", background: "#eef2ff", borderRadius: 8 }}>
+          イベント作成中...
         </div>
-        {/* Right: setup form */}
-        {selectedType ? (
-          <div className="pcd-form-card">
-            <div className="pcd-form-section">
-              <span className="pcd-form-label">消費ジェム（Run毎）</span>
-              <div className="pcd-preset-row">
-                {gemPresets.map(p => (
-                  <button key={p} className={`pcd-preset-btn ${gemCost == p ? "pcd-preset-active" : ""}`}
-                    onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
-                ))}
+      )}
+      <div className="pcd-type-list" style={{ maxWidth: 480 }}>
+        {eventTypes.map(et => {
+          const hasConfig = et.gemCost > 0;
+          return (
+            <button key={et.id} className="pcd-type-btn" disabled={isSyncing}
+              onClick={() => onNewEvent(et.label, et.gemCost||0, et.boxType||null, et.boxName||"", et.maxLosses||3, et.maxWins||7)}>
+              <div className="pcd-type-name">{et.english || et.label}</div>
+              {et.english && <div className="pcd-type-sub">{et.label}</div>}
+              <div style={{ fontSize:11, color:hasConfig?"#64748b":"#ef4444", marginTop:4 }}>
+                {hasConfig
+                  ? `${et.gemCost.toLocaleString()}G · 最大 ${et.maxWins||7}勝 ${et.maxLosses||3}敗${et.boxType?` · ${et.boxType==="PB_BOX"?"🎁 PB":"✨ CB"}`:""}`
+                  : "⚙ ジェムコストを設定してください"
+                }
               </div>
-              <input className="pcd-input" type="number" placeholder="例: 6000"
-                value={gemCost} onChange={e => setGemCost(e.target.value)} />
-            </div>
-            <div className="pcd-form-section">
-              <span className="pcd-form-label">最大勝利数</span>
-              <div className="pcd-preset-row">
-                {maxWinsPresets.map(n => (
-                  <button key={n} className={`pcd-preset-btn ${maxWins === n ? "pcd-preset-active" : ""}`}
-                    onClick={() => setMaxWins(n)}>{n}勝</button>
-                ))}
-                <input className="pcd-input" type="number" min="1" max="20" placeholder="他"
-                  style={{ width: 72, flex: "none" }}
-                  value={maxWinsPresets.includes(maxWins) ? "" : String(maxWins)}
-                  onChange={e => { const v = parseInt(e.target.value); if (v > 0) setMaxWins(v); }} />
-              </div>
-            </div>
-            <div className="pcd-form-section">
-              <span className="pcd-form-label">最大敗北数</span>
-              <div className="pcd-preset-row">
-                {maxLossesPresets.map(n => (
-                  <button key={n} className={`pcd-preset-btn ${maxLosses === n ? "pcd-preset-active" : ""}`}
-                    onClick={() => setMaxLosses(n)}>{n}敗</button>
-                ))}
-              </div>
-              <div className="pcd-form-hint">最大試合数: {maxWins + maxLosses - 1}</div>
-            </div>
-            <div className="pcd-form-section">
-              <span className="pcd-form-label">ボックスプライズ（任意）</span>
-              <div className="pcd-preset-row">
-                {[{k:null,l:"なし"},{k:"PB_BOX",l:"🎁 プレイ"},{k:"CB_BOX",l:"✨ コレクター"}].map(o => (
-                  <button key={String(o.k)} className={`pcd-preset-btn ${boxType === o.k ? "pcd-preset-active" : ""}`}
-                    onClick={() => { setBoxType(o.k); if (!o.k) setBoxName(""); }}>{o.l}</button>
-                ))}
-              </div>
-              {boxType && (
-                <input className="pcd-input" type="text" placeholder="例: ストリクスヘイブンの秘密"
-                  value={boxName} onChange={e => setBoxName(e.target.value)} style={{ marginTop: 8 }} />
-              )}
-            </div>
-            <button className="pcd-primary-btn" style={{ marginTop: 8 }}
-              disabled={!gemCost || isNaN(Number(gemCost))}
-              onClick={() => onNewEvent(selectedType, Number(gemCost), boxType, boxName.trim(), maxLosses, maxWins)}>
-              イベント開始
             </button>
-          </div>
-        ) : (
-          <div className="pcd-form-empty">← イベントタイプを選択してください</div>
-        )}
-        {/* 補助情報: 設定確認プレビュー */}
-        <div className="pcd-preview-panel pcd-form-card">
-          <span className="pcd-form-label">確認</span>
-          {selectedType ? (
-            <>
-              <div className="pcd-preview-row"><span>イベント</span><span>{selectedType}</span></div>
-              <div className="pcd-preview-row"><span>消費ジェム</span><span>{gemCost && !isNaN(Number(gemCost)) ? `${Number(gemCost).toLocaleString()} G` : "—"}</span></div>
-              <div className="pcd-preview-row"><span>最大勝利</span><span>{maxWins}勝</span></div>
-              <div className="pcd-preview-row"><span>最大敗北</span><span>{maxLosses}敗</span></div>
-              <div className="pcd-preview-row"><span>ボックス</span><span>{boxType ? (boxName || (boxType === "PB_BOX" ? "プレイブースター" : "コレクター")) : "なし"}</span></div>
-            </>
-          ) : (
-            <div className="pcd-form-hint">イベントタイプを選択すると、設定内容がここに表示されます。</div>
-          )}
-        </div>
+          );
+        })}
       </div>
+      <button className="pcd-manage-link" onClick={() => setScreen("manage-types")}>⚙ イベントタイプを管理</button>
     </div>
   );
 }
@@ -1262,14 +1206,88 @@ function PCEventTypeManager({ eventTypes, onSave, setScreen }) {
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editEnglish, setEditEnglish] = useState("");
+  const [editGemCost, setEditGemCost] = useState("");
+  const [editMaxWins, setEditMaxWins] = useState(7);
+  const [editMaxLosses, setEditMaxLosses] = useState(3);
+  const [editBoxType, setEditBoxType] = useState(null);
+  const [editBoxName, setEditBoxName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newEnglish, setNewEnglish] = useState("");
+  const [newGemCost, setNewGemCost] = useState("");
+  const [newMaxWins, setNewMaxWins] = useState(7);
+  const [newMaxLosses, setNewMaxLosses] = useState(3);
+  const [newBoxType, setNewBoxType] = useState(null);
+  const [newBoxName, setNewBoxName] = useState("");
 
-  const moveUp = (i) => { if (i === 0) return; const a = [...types]; [a[i-1],a[i]]=[a[i],a[i-1]]; setTypes(a); };
-  const moveDown = (i) => { if (i===types.length-1) return; const a=[...types]; [a[i],a[i+1]]=[a[i+1],a[i]]; setTypes(a); };
-  const startEdit = (t) => { setEditingId(t.id); setEditLabel(t.label); setEditEnglish(t.english||""); };
-  const saveEdit = () => { setTypes(p=>p.map(t=>t.id===editingId?{...t,label:editLabel.trim(),english:editEnglish.trim()}:t)); setEditingId(null); };
+  const gemPresets = [4000, 5000, 6000, 8000];
+  const maxWinsPresets = [4, 7];
+  const maxLossesPresets = [1, 2, 3];
+
+  const moveUp = (i) => { if(i===0)return; const a=[...types]; [a[i-1],a[i]]=[a[i],a[i-1]]; setTypes(a); };
+  const moveDown = (i) => { if(i===types.length-1)return; const a=[...types]; [a[i],a[i+1]]=[a[i+1],a[i]]; setTypes(a); };
+
+  const startEdit = (t) => {
+    setEditingId(t.id); setEditLabel(t.label); setEditEnglish(t.english||"");
+    setEditGemCost(String(t.gemCost||"")); setEditMaxWins(t.maxWins||7); setEditMaxLosses(t.maxLosses||3);
+    setEditBoxType(t.boxType||null); setEditBoxName(t.boxName||"");
+  };
+
+  const saveEdit = () => {
+    setTypes(p=>p.map(t=>t.id===editingId?{
+      ...t, label:editLabel.trim(), english:editEnglish.trim(),
+      gemCost:Number(editGemCost)||0, maxWins:editMaxWins, maxLosses:editMaxLosses,
+      boxType:editBoxType, boxName:editBoxType?editBoxName.trim():"",
+    }:t));
+    setEditingId(null);
+  };
+
+  const resetNew = () => { setNewLabel(""); setNewEnglish(""); setNewGemCost(""); setNewMaxWins(7); setNewMaxLosses(3); setNewBoxType(null); setNewBoxName(""); };
+
+  const renderPCConfigFields = (gemCost, setGemCost, maxWins, setMaxWins, maxLosses, setMaxLosses, boxType, setBoxType, boxName, setBoxName) => (
+    <>
+      <div className="pcd-form-section" style={{ marginTop: 16 }}>
+        <span className="pcd-form-label">消費ジェム（Run毎）</span>
+        <div className="pcd-preset-row">
+          {gemPresets.map(p => (
+            <button key={p} className={`pcd-preset-btn ${Number(gemCost)===p?"pcd-preset-active":""}`}
+              onClick={() => setGemCost(String(p))}>{p.toLocaleString()}</button>
+          ))}
+        </div>
+        <input className="pcd-input" type="number" placeholder="例: 6000" value={gemCost} onChange={e=>setGemCost(e.target.value)} />
+      </div>
+      <div className="pcd-form-section">
+        <span className="pcd-form-label">最大勝利数</span>
+        <div className="pcd-preset-row">
+          {maxWinsPresets.map(n => (
+            <button key={n} className={`pcd-preset-btn ${maxWins===n?"pcd-preset-active":""}`} onClick={()=>setMaxWins(n)}>{n}勝</button>
+          ))}
+          <input className="pcd-input" type="number" min="1" max="20" placeholder="他" style={{width:72,flex:"none"}}
+            value={maxWinsPresets.includes(maxWins)?"":String(maxWins)}
+            onChange={e=>{const v=parseInt(e.target.value);if(v>0)setMaxWins(v);}} />
+        </div>
+      </div>
+      <div className="pcd-form-section">
+        <span className="pcd-form-label">最大敗北数</span>
+        <div className="pcd-preset-row">
+          {maxLossesPresets.map(n => (
+            <button key={n} className={`pcd-preset-btn ${maxLosses===n?"pcd-preset-active":""}`} onClick={()=>setMaxLosses(n)}>{n}敗</button>
+          ))}
+        </div>
+      </div>
+      <div className="pcd-form-section">
+        <span className="pcd-form-label">ボックスプライズ（任意）</span>
+        <div className="pcd-preset-row">
+          {[{k:null,l:"なし"},{k:"PB_BOX",l:"🎁 プレイ"},{k:"CB_BOX",l:"✨ コレクター"}].map(o=>(
+            <button key={String(o.k)} className={`pcd-preset-btn ${boxType===o.k?"pcd-preset-active":""}`}
+              onClick={()=>{setBoxType(o.k);if(!o.k)setBoxName("");}}>{o.l}</button>
+          ))}
+        </div>
+        {boxType && <input className="pcd-input" type="text" placeholder="例: ストリクスヘイブンの秘密"
+          value={boxName} onChange={e=>setBoxName(e.target.value)} style={{marginTop:8}} />}
+      </div>
+    </>
+  );
 
   return (
     <div>
@@ -1283,13 +1301,14 @@ function PCEventTypeManager({ eventTypes, onSave, setScreen }) {
           {types.map((t, i) => (
             <div key={t.id}>
               {editingId === t.id ? (
-                <div style={{ padding: 16, display: "flex", gap: 8, borderBottom: "1px solid #f1f5f9", alignItems: "flex-start" }}>
-                  <div style={{ flex: 1 }}>
-                    <input className="pcd-input" value={editLabel} onChange={e=>setEditLabel(e.target.value)} placeholder="イベント名" style={{marginBottom:8}} autoFocus />
-                    <input className="pcd-input" value={editEnglish} onChange={e=>setEditEnglish(e.target.value)} placeholder="英語名（任意）" />
+                <div style={{ padding:16, borderBottom:"1px solid #f1f5f9" }}>
+                  <input className="pcd-input" value={editLabel} onChange={e=>setEditLabel(e.target.value)} placeholder="イベント名" style={{marginBottom:8}} autoFocus />
+                  <input className="pcd-input" value={editEnglish} onChange={e=>setEditEnglish(e.target.value)} placeholder="英語名（任意）" style={{marginBottom:8}} />
+                  {renderPCConfigFields(editGemCost,setEditGemCost,editMaxWins,setEditMaxWins,editMaxLosses,setEditMaxLosses,editBoxType,setEditBoxType,editBoxName,setEditBoxName)}
+                  <div style={{display:"flex",gap:8,marginTop:12}}>
+                    <button className="pcd-preset-btn" style={{flex:1}} onClick={()=>setEditingId(null)}>キャンセル</button>
+                    <button className="pcd-preset-btn pcd-preset-active" style={{flex:2}} onClick={saveEdit} disabled={!editLabel.trim()}>保存</button>
                   </div>
-                  <button className="pcd-preset-btn" onClick={()=>setEditingId(null)}>キャンセル</button>
-                  <button className="pcd-preset-btn pcd-preset-active" onClick={saveEdit} disabled={!editLabel.trim()}>保存</button>
                 </div>
               ) : (
                 <div className="pcd-table-row" style={{gridTemplateColumns:"auto 1fr auto auto"}}>
@@ -1300,6 +1319,9 @@ function PCEventTypeManager({ eventTypes, onSave, setScreen }) {
                   <div>
                     <div className="pcd-ev-name">{t.english||t.label}</div>
                     {t.english && <div style={{fontSize:11,color:"#94a3b8"}}>{t.label}</div>}
+                    <div style={{fontSize:11,color:t.gemCost?"#64748b":"#ef4444",marginTop:2}}>
+                      {t.gemCost?`${t.gemCost.toLocaleString()}G · ${t.maxWins||7}勝/${t.maxLosses||3}敗`:"⚙ 未設定"}
+                    </div>
                     {i===4 && <div style={{fontSize:10,color:"#4f46e5",marginTop:2}}>↑ ここまでメイン表示</div>}
                   </div>
                   <button className="pcd-preset-btn" onClick={()=>startEdit(t)}>編集</button>
@@ -1313,10 +1335,17 @@ function PCEventTypeManager({ eventTypes, onSave, setScreen }) {
           <div className="pcd-form-card" style={{marginTop:12}}>
             <span className="pcd-form-label">新しいイベントタイプ</span>
             <input className="pcd-input" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="イベント名" style={{marginBottom:8}} autoFocus />
-            <input className="pcd-input" value={newEnglish} onChange={e=>setNewEnglish(e.target.value)} placeholder="英語名（任意）" style={{marginBottom:12}} />
-            <div style={{display:"flex",gap:8}}>
-              <button className="pcd-preset-btn" style={{flex:1}} onClick={()=>{setShowAdd(false);setNewLabel("");setNewEnglish("");}}>キャンセル</button>
-              <button className="pcd-primary-btn" style={{flex:2}} onClick={()=>{if(!newLabel.trim())return;setTypes(p=>[...p,{id:`ev-${Date.now()}`,label:newLabel.trim(),english:newEnglish.trim()}]);setNewLabel("");setNewEnglish("");setShowAdd(false);}} disabled={!newLabel.trim()}>追加</button>
+            <input className="pcd-input" value={newEnglish} onChange={e=>setNewEnglish(e.target.value)} placeholder="英語名（任意）" style={{marginBottom:8}} />
+            {renderPCConfigFields(newGemCost,setNewGemCost,newMaxWins,setNewMaxWins,newMaxLosses,setNewMaxLosses,newBoxType,setNewBoxType,newBoxName,setNewBoxName)}
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <button className="pcd-preset-btn" style={{flex:1}} onClick={()=>{setShowAdd(false);resetNew();}}>キャンセル</button>
+              <button className="pcd-primary-btn" style={{flex:2}} onClick={()=>{
+                if(!newLabel.trim())return;
+                setTypes(p=>[...p,{id:`ev-${Date.now()}`,label:newLabel.trim(),english:newEnglish.trim(),
+                  gemCost:Number(newGemCost)||0,maxWins:newMaxWins,maxLosses:newMaxLosses,
+                  boxType:newBoxType,boxName:newBoxType?newBoxName.trim():""}]);
+                resetNew(); setShowAdd(false);
+              }} disabled={!newLabel.trim()}>追加</button>
             </div>
           </div>
         ) : (
@@ -1421,7 +1450,7 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
 }
 
 // ===== PCRunEntry =====
-function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns }) {
+function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
   const [wins, setWins] = useState(null);
   const [losses, setLosses] = useState(null);
   const [prizeType, setPrizeType] = useState(null);
@@ -1536,10 +1565,10 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
             </div>
           )}
           <div style={{height:1,background:"#e2e8f0",margin:"20px 0"}} />
-          <button className="pcd-primary-btn" disabled={!canSave}
+          <button className="pcd-primary-btn" disabled={!canSave || isSyncing}
             onClick={()=>onSave({wins,losses,prizeType,prizeGem:Number(prizeGem)||0,prizeBoxCount,hasRight,
               boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""})}>
-            Runを保存
+            {isSyncing ? "保存中..." : "Runを保存"}
           </button>
         </div>
         {/* 補助情報: これまでのRun履歴 */}
@@ -1654,7 +1683,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
 }
 
 // ===== PCDemo（実データ PC画面） =====
-function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent }) {
+function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent, isRestoringEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -1759,7 +1788,10 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 
       <main className="pcd-main">
         {/* ホーム */}
-        {screen === "home" && <>
+        {screen === "home" && isRestoringEvent && (
+          <div className="pcd-loading">読み込み中...</div>
+        )}
+        {screen === "home" && !isRestoringEvent && <>
           <div className="pcd-page-header">
             <div className="pcd-page-title">ダッシュボード</div>
             <div className="pcd-page-sub">{yr}年{parseInt(mo)}月</div>
@@ -1778,7 +1810,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             ))}
           </div>
           <div className="pcd-actions">
-            <div className="pcd-action pcd-action-primary" onClick={() => setScreen("record")}>
+            <div className="pcd-action pcd-action-primary" onClick={() => setScreen(activeEvent ? "run" : "record")}>
               <div className="pcd-action-icon">🎮</div>
               <div className="pcd-action-title">ゲームを記録する</div>
               <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
@@ -1803,6 +1835,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             onNewEvent={onNewEvent}
             setScreen={setScreen}
             activeEvent={activeEvent}
+            isSyncing={isSyncing}
           />
         )}
 
@@ -1838,6 +1871,7 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             maxWins={activeEvent.maxWins || 7}
             maxLosses={activeEvent.maxLosses || 3}
             previousRuns={activeEvent.runs}
+            isSyncing={isSyncing}
           />
         )}
 
@@ -1868,22 +1902,9 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 
 // ===== MAIN APP =====
 export default function App() {
-  const [activeEvent, setActiveEvent] = useState(() => {
-    try {
-      const saved = localStorage.getItem("mtg-activeEvent");
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
-  const [screen, setScreen] = useState(() => {
-    try {
-      const saved = localStorage.getItem("mtg-activeEvent");
-      if (saved) {
-        const ev = JSON.parse(saved);
-        return ev.isEditing ? "home" : "summary";
-      }
-    } catch {}
-    return "home";
-  });
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [screen, setScreen] = useState("home");
+  const [isRestoringEvent, setIsRestoringEvent] = useState(true);
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1894,34 +1915,74 @@ export default function App() {
     saveEventTypesToStorage(types);
   };
 
+  // 起動時: DB から in_progress イベントを復元
   useEffect(() => {
-    if (activeEvent) {
-      localStorage.setItem("mtg-activeEvent", JSON.stringify(activeEvent));
-    } else {
-      localStorage.removeItem("mtg-activeEvent");
-    }
-  }, [activeEvent]);
+    const restore = async () => {
+      try {
+        localStorage.removeItem("mtg-activeEvent");
+        const event = await fetchInProgressEvent();
+        if (event) {
+          const runsRes = await fetch(`${API_URL}/api/runs/${event.id}`);
+          const runs = runsRes.ok ? await runsRes.json() : [];
+          setActiveEvent({
+            type: event.type, gemCost: event.gemCost,
+            boxType: event.boxType || null, boxName: event.boxName || "",
+            date: event.date, runs,
+            maxLosses: event.maxLosses || 3, maxWins: event.maxWins || 7,
+            eventId: event.id,
+          });
+        }
+      } catch {}
+      finally { setIsRestoringEvent(false); }
+    };
+    restore();
+  }, []);
 
   const showToast = useCallback((msg, isError = false) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const handleNewEvent = (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
-    setActiveEvent({
-      type, gemCost,
-      boxType: boxType || null, boxName: boxName || "",
-      date: toJSTDateString(),
-      runs: [], notionPageId: null,
-      maxLosses: maxLosses || 3,
-      maxWins: maxWins || 7,
-    });
-    setScreen("summary");
+  const handleNewEvent = async (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
+    setIsSyncing(true);
+    try {
+      const eventId = await createEventInDB(
+        type, gemCost, toJSTDateString(), maxLosses || 3, maxWins || 7,
+        boxType || null, boxName || null
+      );
+      setActiveEvent({
+        type, gemCost,
+        boxType: boxType || null, boxName: boxName || "",
+        date: toJSTDateString(),
+        runs: [],
+        maxLosses: maxLosses || 3,
+        maxWins: maxWins || 7,
+        eventId,
+      });
+      setScreen("run");
+    } catch (e) {
+      showToast("イベントの作成に失敗しました", true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const handleSaveRun = (runData) => {
-    setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
-    setScreen("summary");
+  const handleSaveRun = async (runData) => {
+    if (activeEvent?.isEditing) {
+      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
+      setScreen("summary");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const runId = await createRunInDB(runData, activeEvent.eventId, activeEvent.runs.length + 1);
+      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, { ...runData, id: runId }] }));
+      setScreen("summary");
+    } catch (e) {
+      showToast("Runの保存に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleDeleteRunFromEdit = (run) => {
@@ -1974,21 +2035,19 @@ export default function App() {
         await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
         showToast("✓ 更新しました！");
       } else {
-        const eventPageId = await createEventInNotion(activeEvent.type, activeEvent.gemCost, activeEvent.date, activeEvent.maxLosses || 3, activeEvent.maxWins || 7);
-        if (eventPageId) {
-          for (let i = 0; i < activeEvent.runs.length; i++)
-            await createRunInNotion(activeEvent.runs[i], eventPageId, i + 1);
-          await updateEventInNotion(eventPageId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
-          showToast("✓ 保存しました！");
-        } else { showToast("保存に失敗しました", true); }
+        // 新規フロー: runs は既に DB 保存済み。complete エンドポイントで統計更新のみ
+        await completeEventInDB(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
+        showToast("✓ イベントを完了しました！");
       }
-    } catch (e) { showToast("エラーが発生しました", true); }
-    finally {
+    } catch (e) {
+      showToast("エラーが発生しました", true);
       setIsSyncing(false);
-      setActiveEvent(null);
-      setRefreshKey(k => k + 1);
-      setScreen(isEditing ? "history" : "home");
+      return; // activeEvent をクリアしない（in_progress のまま維持）
     }
+    setIsSyncing(false);
+    setActiveEvent(null);
+    setRefreshKey(k => k + 1);
+    setScreen(isEditing ? "history" : "home");
   };
 
   return (
@@ -2007,11 +2066,13 @@ export default function App() {
               <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
             </div>
           )}
-          {screen === "home" && <HomeScreen onRecord={() => setScreen("record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
-          {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} />}
+          {isRestoringEvent
+            ? <div style={{ color: "#ccc", fontSize: 13, padding: "40px 0", textAlign: "center" }}>読み込み中...</div>
+            : screen === "home" && <HomeScreen onRecord={() => setScreen(activeEvent ? "run" : "record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
+          {!isRestoringEvent && screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
           {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
           {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} />}
+          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} isSyncing={isSyncing} />}
           {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
@@ -2023,7 +2084,7 @@ export default function App() {
         onNewEvent={handleNewEvent} onSaveRun={handleSaveRun}
         onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
         isSyncing={isSyncing} onSaveEventTypes={handleSaveEventTypes}
-        onEditEvent={handleEditEvent}
+        onEditEvent={handleEditEvent} isRestoringEvent={isRestoringEvent}
       />
     </>
   );

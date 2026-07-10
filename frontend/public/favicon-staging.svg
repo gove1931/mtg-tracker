@@ -31,4 +31,4 @@
 
   <!-- Top highlight sparkle -->
   <polygon points="13.5,8.5 16,4 18.5,8.5 16,9.5" fill="white" opacity="0.35" filter="url(#glow)"/>
-<g><circle cx="25.664" cy="6.336" r="7.04" fill="#f59e0b" stroke="#0f172a" stroke-width="0.96"/><text x="25.664" y="8.8" font-family="Arial, sans-serif" font-size="9.152000000000001" font-weight="700" fill="#000" text-anchor="middle">β</text></g></svg>
+<g><circle cx="25.664" cy="6.336" r="7.04" fill="#f59e0b" stroke="#000" stroke-width="0.96"/><text x="25.664" y="8.8" font-family="Arial, sans-serif" font-size="9.152000000000001" font-weight="700" fill="#000" text-anchor="middle">β</text></g></svg>

@@ -87,7 +87,8 @@ home → history
 ## デプロイ（VPS）
 
 - PM2名: `mtg-tracker-api`、URL: `http://163.44.125.213:3002`
-- git remote `vps` → `root@163.44.125.213:/var/repo/mtg-tracker.git`
+- git remote `vps` → `ssh://root@163.44.125.213:2222/var/repo/mtg-tracker.git`
+- デプロイコマンド: `git push vps main:main`（`master` ではなく `main:main` を指定すること）
 - push すると post-receive フックが自動ビルド＆PM2 restart
 
 ## 既知の課題・メモ

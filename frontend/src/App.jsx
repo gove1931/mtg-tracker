@@ -640,10 +640,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
 
   const hasPreviousRuns = previousRuns && previousRuns.length > 0;
 
-  // 過去Runからジェム・敗北の候補値を導出
-  const lossCandidates = hasPreviousRuns ? [...new Set(
-    previousRuns.filter(r => r.wins === maxWins && r.losses != null).map(r => r.losses)
-  )].sort((a, b) => a - b) : [];
+  // 過去Runからジェム候補値を導出
   const gemCandidates = hasPreviousRuns ? [...new Set(
     previousRuns.filter(r => r.prizeType === "ジェム" && r.prizeGem > 0).map(r => r.prizeGem)
   )].sort((a, b) => a - b) : [];
@@ -711,7 +708,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
         <div className="card">
           <div className="section-label">敗北数（{maxWins}勝時）</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {(lossCandidates.length > 0 ? lossCandidates : Array.from({ length: maxLosses }, (_, n) => n)).map(n => (
+            {Array.from({ length: maxLosses }, (_, n) => n).map(n => (
               <button key={n} className={`win-btn ${losses === n ? "win-btn-selected" : ""}`}
                 style={{ flex: 1 }} onClick={() => setLosses(n)}>{n}</button>
             ))}
@@ -1460,7 +1457,6 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
   const [autoFilled, setAutoFilled] = useState(false);
 
   const hasPrev = previousRuns && previousRuns.length > 0;
-  const lossCandidates = hasPrev ? [...new Set(previousRuns.filter(r=>r.wins===maxWins&&r.losses!=null).map(r=>r.losses))].sort((a,b)=>a-b) : [];
   const gemCandidates = hasPrev ? [...new Set(previousRuns.filter(r=>r.prizeType==="ジェム"&&r.prizeGem>0).map(r=>r.prizeGem))].sort((a,b)=>a-b) : [];
 
   const visiblePrizes = PRIZE_TYPES.filter(pt=>{
@@ -1513,7 +1509,7 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
             <div style={{marginTop:20}}>
               <span className="pcd-form-label">敗北数（{maxWins}勝時）</span>
               <div className="pcd-preset-row">
-                {(lossCandidates.length>0?lossCandidates:Array.from({length:maxLosses},(_,n)=>n)).map(n=>(
+                {Array.from({length:maxLosses},(_,n)=>n).map(n=>(
                   <button key={n} className={`pcd-preset-btn pcd-preset-lg ${losses===n?"pcd-preset-active":""}`}
                     onClick={()=>setLosses(n)}>{n}</button>
                 ))}

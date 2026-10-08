@@ -1475,11 +1475,11 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEdit
             <div style={{height:1,background:"#e2e8f0",margin:"14px 0"}} />
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13,color:"#64748b"}}>総消費</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#ef4444"}}>-{totalGemCost.toLocaleString()} G<span className="pcd-yen">{formatYen(-totalGemCost)}</span></span>
+              <span style={{fontSize:13,fontWeight:600,color:"#ef4444"}}>-{totalGemCost.toLocaleString()} G<span className="pcd-yen">≈ {formatYen(-totalGemCost)}</span></span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13,color:"#64748b"}}>総獲得</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>+{totalGemPrize.toLocaleString()} G<span className="pcd-yen">{formatYen(totalGemPrize)}</span></span>
+              <span style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>+{totalGemPrize.toLocaleString()} G<span className="pcd-yen">≈ {formatYen(totalGemPrize)}</span></span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
               <span style={{fontSize:13,color:"#64748b"}}>収支</span>

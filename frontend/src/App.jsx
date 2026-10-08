@@ -33,6 +33,14 @@ function saveEventTypesToStorage(types) {
 // PB BOX=20000G/箱、CB BOX=60000G/箱（20000G=15000円換算）
 const BOX_GEM_VALUE = { "PB_BOX": 20000, "CB_BOX": 60000 };
 
+// ジェム→円換算（20000ジェム=15000円）。収支ページの補助表示用
+const YEN_PER_GEM = 15000 / 20000;
+function formatYen(gem, withSign = true) {
+  const yen = Math.round(gem * YEN_PER_GEM);
+  const sign = withSign ? (yen > 0 ? "+" : yen < 0 ? "-" : "") : "";
+  return `${sign}¥${Math.abs(yen).toLocaleString()}`;
+}
+
 const PRIZE_TYPES = [
   { id: "なし",   label: "なし",                   icon: "✕", color: "#555" },
   { id: "ジェム", label: "ジェム",                 icon: "💎", color: "#7ecfff" },
@@ -536,6 +544,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
                   <div className={`summary-val ${balance >= 0 ? "gem-positive" : "gem-negative"}`}>
                     {balance >= 0 ? "+" : ""}{balance.toLocaleString()}
                   </div>
+                  <div className="summary-yen">≈ {formatYen(balance)}</div>
                   <div className="summary-key">ジェム収支</div>
                 </div>
               </div>
@@ -884,6 +893,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, on
           <div className={`summary-val ${gemBalance >= 0 ? "gem-positive" : "gem-negative"}`}>
             {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
           </div>
+          <div className="summary-yen">≈ {formatYen(gemBalance)}</div>
           <div className="summary-key">ジェム収支</div>
         </div>
       </div>
@@ -893,11 +903,13 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, on
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ textAlign: "center", flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#ff8080" }}>-{totalGemCost.toLocaleString()}</div>
+              <div className="strip-yen">≈ {formatYen(-totalGemCost)}</div>
               <div style={{ fontSize: 9, color: "#bbb", textTransform: "uppercase", marginTop: 2 }}>総消費ジェム</div>
             </div>
             <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.07)" }} />
             <div style={{ textAlign: "center", flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#68d9a4" }}>+{totalGemPrize.toLocaleString()}</div>
+              <div className="strip-yen">≈ {formatYen(totalGemPrize)}</div>
               <div style={{ fontSize: 9, color: "#bbb", textTransform: "uppercase", marginTop: 2 }}>総獲得ジェム</div>
             </div>
             <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.07)" }} />
@@ -905,6 +917,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, on
               <div style={{ fontSize: 13, fontWeight: 600, color: gemBalance >= 0 ? "#68d9a4" : "#ff8080" }}>
                 {gemBalance >= 0 ? "+" : ""}{gemBalance.toLocaleString()}
               </div>
+              <div className="strip-yen">≈ {formatYen(gemBalance)}</div>
               <div style={{ fontSize: 9, color: "#bbb", textTransform: "uppercase", marginTop: 2 }}>差し引き</div>
             </div>
           </div>
@@ -992,6 +1005,8 @@ const styles = `
   .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .btn-grid { display: grid; gap: 8px; }
+  .summary-yen { font-size: 11px; color: #ccc; margin-top: 2px; }
+  .strip-yen { font-size: 10px; color: #bbb; margin-top: 1px; }
   .btn-grid-2 { grid-template-columns: 1fr 1fr; }
 
   .mt-8 { margin-top: 8px; }
@@ -1180,6 +1195,7 @@ const styles = `
     .pcd-mini-row:last-child { border-bottom: none; }
     .pcd-mini-num { color: #94a3b8; width: 22px; flex-shrink: 0; }
     .pcd-mini-wins { font-weight: 600; color: #1e293b; width: 60px; flex-shrink: 0; }
+    .pcd-yen { display: block; text-align: right; font-size: 11px; font-weight: 400; color: #64748b; margin-top: 1px; }
     .pcd-mini-prize { color: #64748b; flex: 1; }
   }
 
@@ -1459,16 +1475,17 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEdit
             <div style={{height:1,background:"#e2e8f0",margin:"14px 0"}} />
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13,color:"#64748b"}}>総消費</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#ef4444"}}>-{totalGemCost.toLocaleString()} G</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#ef4444"}}>-{totalGemCost.toLocaleString()} G<span className="pcd-yen">{formatYen(-totalGemCost)}</span></span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13,color:"#64748b"}}>総獲得</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>+{totalGemPrize.toLocaleString()} G</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>+{totalGemPrize.toLocaleString()} G<span className="pcd-yen">{formatYen(totalGemPrize)}</span></span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
               <span style={{fontSize:13,color:"#64748b"}}>収支</span>
               <span style={{fontSize:17,fontWeight:700,color:gemBalance>=0?"#16a34a":"#ef4444"}}>
                 {gemBalance>=0?"+":""}{gemBalance.toLocaleString()} G
+                <span className="pcd-yen">≈ {formatYen(gemBalance)}</span>
               </span>
             </div>
             <button className="pcd-primary-btn" onClick={onFinish} disabled={isSyncing}>
@@ -1677,7 +1694,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
       )}
       <div className="pcd-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {[
-          { val: (balance >= 0 ? "+" : "") + balance.toLocaleString() + " G", cls: balance >= 0 ? "pos" : "neg", label: "ジェム収支" },
+          { val: (balance >= 0 ? "+" : "") + balance.toLocaleString() + " G", cls: balance >= 0 ? "pos" : "neg", label: "ジェム収支", yen: formatYen(balance) },
           { val: wr !== null ? wr + "%" : "—", cls: "", label: "勝率" },
           { val: tw, cls: "", label: "総勝利" },
           { val: tw + tl, cls: "", label: "総対戦" },
@@ -1685,6 +1702,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
         ].map(s => (
           <div key={s.label} className="pcd-stat">
             <div className={`pcd-stat-val ${s.cls}`}>{s.val}</div>
+            {s.yen && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>≈ {s.yen}</div>}
             <div className="pcd-stat-key">{s.label}</div>
           </div>
         ))}

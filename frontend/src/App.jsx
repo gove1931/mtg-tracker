@@ -79,6 +79,25 @@ async function completeEventInDB(eventId, totalRuns, totalWins, totalLosses, gem
   if (!res.ok) throw new Error("イベント完了に失敗しました");
 }
 
+async function updateRunInDB(runId, run) {
+  const res = await fetch(`${API_URL}/api/runs/${runId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      wins: run.wins, losses: run.losses || 0,
+      prizeType: run.prizeType,
+      prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
+      hasRight: run.hasRight || false,
+    }),
+  });
+  if (!res.ok) throw new Error("Run修正に失敗しました");
+}
+
+// 途中のRunを削除すると runs.length+1 が既存の run_index と重複するため、最大値+1 を使う
+function nextRunIndex(runs) {
+  return Math.max(runs.length, ...runs.map(r => r.runIndex || 0)) + 1;
+}
+
 async function fetchInProgressEvent() {
   const res = await fetch(`${API_URL}/api/events/in-progress`);
   return res.ok ? await res.json() : null;
@@ -629,13 +648,15 @@ function HistoryScreen({ onBack, onEditEvent }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
-  const [wins, setWins] = useState(null);
-  const [losses, setLosses] = useState(null);
-  const [prizeType, setPrizeType] = useState(null);
-  const [prizeGem, setPrizeGem] = useState("");
-  const [prizeBoxCount, setPrizeBoxCount] = useState(null);
-  const [hasRight, setHasRight] = useState(false);
+function RunEntryScreen({ runIndex, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
+  // initialRun があれば既存Runの修正モード（登録済みの値で初期化）
+  const [wins, setWins] = useState(initialRun?.wins ?? null);
+  const [losses, setLosses] = useState(initialRun?.losses ?? null);
+  const [prizeType, setPrizeType] = useState(initialRun?.prizeType ?? null);
+  const [prizeGem, setPrizeGem] = useState(initialRun?.prizeGem > 0 ? String(initialRun.prizeGem) : "");
+  const [prizeBoxCount, setPrizeBoxCount] = useState(initialRun?.prizeBoxCount || null);
+  const [hasRight, setHasRight] = useState(initialRun?.hasRight || false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
 
   const hasPreviousRuns = previousRuns && previousRuns.length > 0;
@@ -693,7 +714,7 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
       <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "Cinzel, serif", color: "#7ecfff", marginBottom: 20 }}>
-        RUN #{runIndex}
+        RUN #{runIndex}{initialRun && <span style={{ fontSize: 14, color: "#ffcb6b", marginLeft: 10, fontFamily: "inherit" }}>修正</span>}
       </div>
       <div className="card">
         <div className="section-label">勝利数</div>
@@ -796,15 +817,24 @@ function RunEntryScreen({ runIndex, onSave, onBack, boxType, boxName, maxWins = 
           onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
             hasRight,
             boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
-          {isSyncing ? "保存中..." : "Runを保存"}
+          {isSyncing ? "保存中..." : initialRun ? "修正を保存" : "Runを保存"}
         </button>
       </div>
+      {onDelete && (
+        <button className="btn" disabled={isSyncing}
+          style={{ width: "100%", marginTop: 16, padding: "12px", fontSize: 13, color: "#ff8080",
+            borderColor: confirmDelete ? "rgba(255,128,128,0.6)" : "rgba(255,128,128,0.25)",
+            background: confirmDelete ? "rgba(255,128,128,0.1)" : undefined }}
+          onClick={() => confirmDelete ? onDelete() : setConfirmDelete(true)}>
+          {confirmDelete ? "本当に削除する（もう一度タップ）" : "このRunを削除"}
+        </button>
+      )}
     </div>
   );
 }
 
 // ===== EventSummaryScreen =====
-function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, isSyncing }) {
+function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, onEditRun, isSyncing }) {
   const totalWins = event.runs.reduce((s, r) => s + r.wins, 0);
   const totalLosses = event.runs.reduce((s, r) => s + (r.losses || 0), 0);
   const winRate = (totalWins + totalLosses) > 0
@@ -905,9 +935,13 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, is
               <span className="run-num">#{i + 1}</span>
               <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
               <span className="run-prize">{prize?.icon} {prizeText}</span>
+              <button onClick={() => onEditRun(i)} disabled={isSyncing}
+                style={{ marginLeft: "auto", background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
+                修正
+              </button>
               {event.isEditing && (
                 <button onClick={() => onDeleteRun(r)}
-                  style={{ marginLeft: "auto", background: "none", border: "none", color: "#ff8080", fontSize: 16, cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>
+                  style={{ background: "none", border: "none", color: "#ff8080", fontSize: 16, cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>
                   ×
                 </button>
               )}
@@ -1356,7 +1390,7 @@ function PCEventTypeManager({ eventTypes, onSave, setScreen }) {
 }
 
 // ===== PCEventSummary =====
-function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSyncing }) {
+function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEditRun, isSyncing }) {
   const totalWins = event.runs.reduce((s,r)=>s+r.wins,0);
   const totalLosses = event.runs.reduce((s,r)=>s+(r.losses||0),0);
   const winRate = (totalWins+totalLosses)>0 ? Math.round(totalWins/(totalWins+totalLosses)*100) : null;
@@ -1383,8 +1417,8 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
         <div style={{ maxWidth: 640 }}>
           <div className="pcd-section-header"><div className="pcd-section-title">Run履歴</div></div>
           <div className="pcd-table">
-            <div className="pcd-table-head" style={{gridTemplateColumns:event.isEditing?"52px 100px 1fr 36px":"52px 100px 1fr"}}>
-              <span>#</span><span>成績</span><span>プライズ</span>{event.isEditing&&<span></span>}
+            <div className="pcd-table-head" style={{gridTemplateColumns:event.isEditing?"52px 100px 1fr 56px 36px":"52px 100px 1fr 56px"}}>
+              <span>#</span><span>成績</span><span>プライズ</span><span></span>{event.isEditing&&<span></span>}
             </div>
             {event.runs.length===0 ? (
               <div className="pcd-loading">まだRunがありません</div>
@@ -1395,10 +1429,11 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
               if(r.prizeType==="PB_BOX"||r.prizeType==="CB_BOX") pt+=` ${r.prizeBoxCount}箱 ≈${(BOX_GEM_VALUE[r.prizeType]*r.prizeBoxCount).toLocaleString()}G`;
               if(r.hasRight) pt+=" 🏆 権利";
               return (
-                <div key={i} className="pcd-table-row" style={{gridTemplateColumns:event.isEditing?"52px 100px 1fr 36px":"52px 100px 1fr"}}>
+                <div key={i} className="pcd-table-row" style={{gridTemplateColumns:event.isEditing?"52px 100px 1fr 56px 36px":"52px 100px 1fr 56px"}}>
                   <span style={{color:"#94a3b8",fontSize:12}}>#{i+1}</span>
                   <span style={{fontWeight:600,fontSize:13}}>{r.wins}勝{r.losses!=null?` ${r.losses}敗`:""}</span>
                   <span style={{color:"#475569",fontSize:13}}>{prize?.icon} {pt}</span>
+                  <button onClick={()=>onEditRun(i)} disabled={isSyncing} style={{background:"none",border:"1px solid #fcd34d",borderRadius:6,color:"#d97706",cursor:"pointer",fontSize:12,padding:"2px 8px"}}>修正</button>
                   {event.isEditing&&<button onClick={()=>onDeleteRun(r)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:15,padding:0}}>×</button>}
                 </div>
               );
@@ -1447,13 +1482,14 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, isSync
 }
 
 // ===== PCRunEntry =====
-function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
-  const [wins, setWins] = useState(null);
-  const [losses, setLosses] = useState(null);
-  const [prizeType, setPrizeType] = useState(null);
-  const [prizeGem, setPrizeGem] = useState("");
-  const [prizeBoxCount, setPrizeBoxCount] = useState(null);
-  const [hasRight, setHasRight] = useState(false);
+function PCRunEntry({ runIndex, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
+  const [wins, setWins] = useState(initialRun?.wins ?? null);
+  const [losses, setLosses] = useState(initialRun?.losses ?? null);
+  const [prizeType, setPrizeType] = useState(initialRun?.prizeType ?? null);
+  const [prizeGem, setPrizeGem] = useState(initialRun?.prizeGem>0 ? String(initialRun.prizeGem) : "");
+  const [prizeBoxCount, setPrizeBoxCount] = useState(initialRun?.prizeBoxCount || null);
+  const [hasRight, setHasRight] = useState(initialRun?.hasRight || false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
 
   const hasPrev = previousRuns && previousRuns.length > 0;
@@ -1493,7 +1529,7 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
     <div>
       <button className="pcd-back-btn" onClick={onBack}>← キャンセル</button>
       <div className="pcd-page-header">
-        <div className="pcd-page-title">Run #{runIndex}</div>
+        <div className="pcd-page-title">Run #{runIndex}{initialRun && <span style={{fontSize:14,color:"#d97706",marginLeft:10}}>修正</span>}</div>
         {autoFilled && <div className="pcd-autofill-badge">前回と同じ報酬を自動入力</div>}
       </div>
       <div className="pcd-run-layout">
@@ -1564,8 +1600,15 @@ function PCRunEntry({ runIndex, onSave, onBack, boxType, boxName, maxWins=7, max
           <button className="pcd-primary-btn" disabled={!canSave || isSyncing}
             onClick={()=>onSave({wins,losses,prizeType,prizeGem:Number(prizeGem)||0,prizeBoxCount,hasRight,
               boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""})}>
-            {isSyncing ? "保存中..." : "Runを保存"}
+            {isSyncing ? "保存中..." : initialRun ? "修正を保存" : "Runを保存"}
           </button>
+          {onDelete && (
+            <button className="pcd-ghost-btn" disabled={isSyncing}
+              style={{marginTop:10,width:"100%",color:"#ef4444",borderColor:confirmDelete?"#ef4444":undefined}}
+              onClick={()=>confirmDelete?onDelete():setConfirmDelete(true)}>
+              {confirmDelete?"本当に削除する（もう一度クリック）":"このRunを削除"}
+            </button>
+          )}
         </div>
         {/* 補助情報: これまでのRun履歴 */}
         <div className="pcd-history-panel pcd-form-card">
@@ -1679,7 +1722,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
 }
 
 // ===== PCDemo（実データ PC画面） =====
-function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, isSyncing, onSaveEventTypes, onEditEvent, isRestoringEvent }) {
+function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, onEditRun, runEntryProps, editingRunIndex, isSyncing, onSaveEventTypes, onEditEvent, isRestoringEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -1852,23 +1895,14 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             onFinish={onFinish}
             onBack={() => { if (activeEvent.isEditing) { setScreen("history"); } else setScreen("home"); }}
             onDeleteRun={onDeleteRun}
+            onEditRun={onEditRun}
             isSyncing={isSyncing}
           />
         )}
 
         {/* 記録: Run入力 */}
         {screen === "run" && activeEvent && (
-          <PCRunEntry
-            runIndex={activeEvent.runs.length + 1}
-            onSave={onSaveRun}
-            onBack={() => setScreen("summary")}
-            boxType={activeEvent.boxType}
-            boxName={activeEvent.boxName || ""}
-            maxWins={activeEvent.maxWins || 7}
-            maxLosses={activeEvent.maxLosses || 3}
-            previousRuns={activeEvent.runs}
-            isSyncing={isSyncing}
-          />
+          <PCRunEntry key={editingRunIndex ?? "new"} {...runEntryProps} />
         )}
 
         {/* 履歴 */}
@@ -1899,12 +1933,16 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 // ===== MAIN APP =====
 export default function App() {
   const [activeEvent, setActiveEvent] = useState(null);
-  const [screen, setScreen] = useState("home");
+  const [screen, setScreenRaw] = useState("home");
   const [isRestoringEvent, setIsRestoringEvent] = useState(true);
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 修正中のRunの位置（activeEvent.runs のインデックス）。null なら新規Run入力
+  const [editingRunIndex, setEditingRunIndex] = useState(null);
+  // 画面遷移のたびに修正モードを解除（ナビ経由で離れた場合も含む）。修正開始時は遷移後に再設定する
+  const setScreen = useCallback((next) => { setEditingRunIndex(null); setScreenRaw(next); }, []);
 
   const handleSaveEventTypes = (types) => {
     setEventTypes(types);
@@ -1963,7 +2001,65 @@ export default function App() {
     }
   };
 
+  const handleStartEditRun = (index) => {
+    setScreen("run");
+    setEditingRunIndex(index);
+  };
+
+  const handleRunEntryBack = () => {
+    setEditingRunIndex(null);
+    setScreen("summary");
+  };
+
+  const handleUpdateRun = async (runData) => {
+    const index = editingRunIndex;
+    const target = activeEvent.runs[index];
+    const replaceRun = (patch) => setActiveEvent(prev => ({
+      ...prev,
+      runs: prev.runs.map((r, i) => i === index ? { ...r, ...runData, ...patch } : r),
+    }));
+    if (activeEvent.isEditing) {
+      // 履歴編集モード: 「変更を保存」時にまとめてDBへ反映する
+      replaceRun(target.id ? { isModified: true } : {});
+      handleRunEntryBack();
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      await updateRunInDB(target.id, runData);
+      replaceRun({});
+      showToast("✓ Runを修正しました");
+      handleRunEntryBack();
+    } catch (e) {
+      showToast("Runの修正に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteEditingRun = async () => {
+    const target = activeEvent.runs[editingRunIndex];
+    if (activeEvent.isEditing) {
+      handleDeleteRunFromEdit(target);
+      handleRunEntryBack();
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/runs/${target.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setActiveEvent(prev => ({ ...prev, runs: prev.runs.filter(r => r !== target) }));
+      showToast("✓ Runを削除しました");
+      handleRunEntryBack();
+    } catch (e) {
+      showToast("Runの削除に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSaveRun = async (runData) => {
+    if (editingRunIndex !== null) return handleUpdateRun(runData);
     if (activeEvent?.isEditing) {
       setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
       setScreen("summary");
@@ -1971,8 +2067,9 @@ export default function App() {
     }
     setIsSyncing(true);
     try {
-      const runId = await createRunInDB(runData, activeEvent.eventId, activeEvent.runs.length + 1);
-      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, { ...runData, id: runId }] }));
+      const runIndex = nextRunIndex(activeEvent.runs);
+      const runId = await createRunInDB(runData, activeEvent.eventId, runIndex);
+      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, { ...runData, id: runId, runIndex }] }));
       setScreen("summary");
     } catch (e) {
       showToast("Runの保存に失敗しました。再度お試しください。", true);
@@ -2026,8 +2123,11 @@ export default function App() {
           await deleteRunFromDB(id);
         const existingRuns = activeEvent.runs.filter(r => r.id);
         const newRuns = activeEvent.runs.filter(r => !r.id);
+        for (const r of existingRuns.filter(r => r.isModified))
+          await updateRunInDB(r.id, r);
+        const baseIndex = nextRunIndex(existingRuns) - 1;
         for (let i = 0; i < newRuns.length; i++)
-          await createRunInNotion(newRuns[i], activeEvent.eventId, existingRuns.length + i + 1);
+          await createRunInNotion(newRuns[i], activeEvent.eventId, baseIndex + i + 1);
         await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
         showToast("✓ 更新しました！");
       } else {
@@ -2044,6 +2144,21 @@ export default function App() {
     setActiveEvent(null);
     setRefreshKey(k => k + 1);
     setScreen(isEditing ? "history" : "home");
+  };
+
+  const editingRun = editingRunIndex !== null ? activeEvent?.runs[editingRunIndex] : null;
+  const runEntryProps = activeEvent && {
+    runIndex: editingRun ? editingRunIndex + 1 : activeEvent.runs.length + 1,
+    initialRun: editingRun,
+    onSave: handleSaveRun,
+    onDelete: editingRun ? handleDeleteEditingRun : null,
+    onBack: handleRunEntryBack,
+    boxType: activeEvent.boxType,
+    boxName: activeEvent.boxName || "",
+    maxWins: activeEvent.maxWins || 7,
+    maxLosses: activeEvent.maxLosses || 3,
+    previousRuns: editingRun ? activeEvent.runs.filter(r => r !== editingRun) : activeEvent.runs,
+    isSyncing,
   };
 
   return (
@@ -2068,8 +2183,8 @@ export default function App() {
           {!isRestoringEvent && screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
           {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
           {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-          {screen === "run" && activeEvent && <RunEntryScreen runIndex={activeEvent.runs.length + 1} onSave={handleSaveRun} onBack={() => setScreen("summary")} boxType={activeEvent.boxType} boxName={activeEvent.boxName || ""} maxWins={activeEvent.maxWins || 7} maxLosses={activeEvent.maxLosses || 3} previousRuns={activeEvent.runs} isSyncing={isSyncing} />}
-          {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} isSyncing={isSyncing} />}
+          {screen === "run" && activeEvent && <RunEntryScreen key={editingRunIndex ?? "new"} {...runEntryProps} />}
+          {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} onEditRun={handleStartEditRun} isSyncing={isSyncing} />}
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
       </div>
@@ -2079,6 +2194,7 @@ export default function App() {
         eventTypes={eventTypes} activeEvent={activeEvent}
         onNewEvent={handleNewEvent} onSaveRun={handleSaveRun}
         onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
+        onEditRun={handleStartEditRun} runEntryProps={runEntryProps} editingRunIndex={editingRunIndex}
         isSyncing={isSyncing} onSaveEventTypes={handleSaveEventTypes}
         onEditEvent={handleEditEvent} isRestoringEvent={isRestoringEvent}
       />

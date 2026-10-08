@@ -66,6 +66,14 @@ async function createRun({ eventPageId, runIndex, wins, losses, prizeType, prize
   return { id: rows[0].id };
 }
 
+async function updateRun(id, { wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight }) {
+  const { rowCount } = await pool.query(
+    `UPDATE runs SET wins=$1, losses=$2, prize_type=$3, prize_gem=$4, prize_box_count=$5, has_right=$6 WHERE id=$7`,
+    [wins, losses ?? 0, prizeType, prizeGem || 0, prizeBoxCount || 0, hasRight ?? false, id]
+  );
+  return rowCount;
+}
+
 async function getRunsByEvent(eventId) {
   const { rows } = await pool.query(
     `SELECT id, run_index, wins, losses, prize_type, prize_gem, prize_box_count, has_right
@@ -98,6 +106,7 @@ function rowToEvent(r) {
 function rowToRun(r) {
   return {
     id:            r.id,
+    runIndex:      r.run_index,
     wins:          r.wins,
     losses:        r.losses,
     prizeType:     r.prize_type,
@@ -107,4 +116,4 @@ function rowToRun(r) {
   };
 }
 
-module.exports = { createEvent, getEvents, getInProgressEvent, updateEvent, completeEvent, createRun, getRunsByEvent, deleteRun, deleteEvent };
+module.exports = { createEvent, getEvents, getInProgressEvent, updateEvent, completeEvent, createRun, updateRun, getRunsByEvent, deleteRun, deleteEvent };

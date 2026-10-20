@@ -49,10 +49,11 @@ mtg-tracker/
 └── backend/         # Express (CommonJS)
     └── src/
         ├── app.js       # サーバー起動・ルーティング登録
-        ├── notion.js    # Notion API ラッパー（全DB操作）
+        ├── db.js        # PostgreSQL アクセス（全DB操作・イベント集計の再計算）
+        ├── notion.js    # 旧Notion実装（未使用）
         └── routes/
-            ├── events.js  # GET/POST /api/events、PUT /api/events/:id
-            └── runs.js    # GET /api/runs/:eventId、POST /api/runs
+            ├── events.js  # /api/events（一覧・進行中・作成・完了・削除）
+            └── runs.js    # /api/runs（全件・イベント別・作成・修正・削除）
 ```
 
 ### データフロー

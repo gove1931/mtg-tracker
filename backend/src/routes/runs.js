@@ -1,7 +1,16 @@
 const { Router } = require("express");
-const { createRun, updateRun, getRunsByEvent, deleteRun } = require("../db");
+const { createRun, updateRun, getRunsByEvent, getAllRuns, deleteRun } = require("../db");
 
 const router = Router();
+
+// 全Run（月別集計・今日のRun用）
+router.get("/", async (req, res) => {
+  try {
+    res.json(await getAllRuns());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get("/:eventId", async (req, res) => {
   try {
@@ -13,14 +22,16 @@ router.get("/:eventId", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight } = req.body;
-  if (!eventPageId || runIndex == null || wins == null || !prizeType)
-    return res.status(400).json({ error: "eventPageId, runIndex, wins, prizeType は必須です" });
+  const { eventPageId, eventType, gemCost, maxWins, maxLosses,
+          wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight } = req.body;
+  if (wins == null || !prizeType || (!eventPageId && !eventType))
+    return res.status(400).json({ error: "wins, prizeType と eventPageId か eventType のどちらかは必須です" });
   try {
-    const run = await createRun({ eventPageId, runIndex, wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight });
+    const run = await createRun({ eventPageId, eventType, gemCost, maxWins, maxLosses,
+                                  wins, losses, prizeType, prizeGem, prizeBoxCount, hasRight });
     res.status(201).json(run);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 

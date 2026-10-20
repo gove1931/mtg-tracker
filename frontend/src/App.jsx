@@ -41,6 +41,59 @@ function formatYen(gem, withSign = true) {
   return `${sign}¥${Math.abs(yen).toLocaleString()}`;
 }
 
+// Run 1件の獲得ジェム（BOXは換算値）と収支
+function runPrizeGem(r) {
+  if (r.prizeType === "ジェム") return r.prizeGem || 0;
+  if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
+    return BOX_GEM_VALUE[r.prizeType] * (r.prizeBoxCount || 1);
+  return 0;
+}
+function runGemBalance(r) { return runPrizeGem(r) - (r.gemCost || 0); }
+
+// Run配列の集計（Run数・勝敗・勝率・消費/獲得/収支）
+function summarizeRuns(runs) {
+  const wins = runs.reduce((s, r) => s + (r.wins || 0), 0);
+  const losses = runs.reduce((s, r) => s + (r.losses || 0), 0);
+  const cost = runs.reduce((s, r) => s + (r.gemCost || 0), 0);
+  const prize = runs.reduce((s, r) => s + runPrizeGem(r), 0);
+  return {
+    count: runs.length, wins, losses, cost, prize, balance: prize - cost,
+    winRate: (wins + losses) > 0 ? Math.round(wins / (wins + losses) * 100) : null,
+  };
+}
+
+// Runのプレイ日時（UTC）→ JSTの "YYYY-MM-DD"
+function runJSTDate(r) {
+  const t = r.playedAt ? new Date(r.playedAt).getTime() : Date.now();
+  return new Date(t + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+// 月 → 種別 の2段集計。[[ "YYYY-MM", [{ type, runs, ...summary }] ], ...] を新しい月順で返す
+function groupRunsByMonthType(runs) {
+  const months = {};
+  for (const r of runs) {
+    const m = runJSTDate(r).slice(0, 7);
+    const t = r.eventType || "（種別なし）";
+    ((months[m] ||= {})[t] ||= []).push(r);
+  }
+  return Object.entries(months).sort((a, b) => b[0].localeCompare(a[0])).map(([m, byType]) => [
+    m,
+    Object.entries(byType)
+      .map(([type, rs]) => ({ type, runs: rs, ...summarizeRuns(rs) }))
+      .sort((a, b) => b.count - a.count),
+  ]);
+}
+
+// Runのプライズ表示テキスト
+function runPrizeText(r) {
+  const prize = PRIZE_TYPES.find(p => p.id === r.prizeType);
+  let t = prize?.label || "";
+  if (r.prizeType === "ジェム") t += ` ${(r.prizeGem || 0).toLocaleString()}`;
+  if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX") t += ` ${r.prizeBoxCount || 1}箱`;
+  if (r.hasRight) t += " 🏆";
+  return `${prize?.icon || ""} ${t}`.trim();
+}
+
 const PRIZE_TYPES = [
   { id: "なし",   label: "なし",                   icon: "✕", color: "#555" },
   { id: "ジェム", label: "ジェム",                 icon: "💎", color: "#7ecfff" },
@@ -62,12 +115,14 @@ async function createEventInDB(eventType, gemCost, date, maxLosses, maxWins, box
   return (await res.json()).id;
 }
 
-async function createRunInDB(run, eventId, runIndex) {
+// 種別を指定してRunを保存。同じ種別の進行中（期間）イベントがあればサーバー側で自動的に紐づく
+async function createRunInDB(run, typeCfg) {
   const res = await fetch(`${API_URL}/api/runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      eventPageId: eventId, runIndex,
+      eventType: typeCfg.label, gemCost: typeCfg.gemCost || 0,
+      maxWins: typeCfg.maxWins || 7, maxLosses: typeCfg.maxLosses || 3,
       wins: run.wins, losses: run.losses || 0,
       prizeType: run.prizeType,
       prizeGem: run.prizeGem, prizeBoxCount: run.prizeBoxCount,
@@ -75,16 +130,26 @@ async function createRunInDB(run, eventId, runIndex) {
     }),
   });
   if (!res.ok) throw new Error("Run保存に失敗しました");
-  return (await res.json()).id;
+  return await res.json();
 }
 
-async function completeEventInDB(eventId, totalRuns, totalWins, totalLosses, gemBalance) {
-  const res = await fetch(`${API_URL}/api/events/${eventId}/complete`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ totalRuns, totalWins, totalLosses, gemBalance }),
-  });
+// 集計値はサーバー側でRunから再計算される
+async function completeEventInDB(eventId) {
+  const res = await fetch(`${API_URL}/api/events/${eventId}/complete`, { method: "PUT" });
   if (!res.ok) throw new Error("イベント完了に失敗しました");
+}
+
+async function fetchOpenEvents() {
+  const res = await fetch(`${API_URL}/api/events/in-progress`);
+  if (!res.ok) throw new Error("進行中イベントの取得に失敗しました");
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data ? [data] : []);
+}
+
+async function fetchAllRuns() {
+  const res = await fetch(`${API_URL}/api/runs`);
+  if (!res.ok) throw new Error("Runの取得に失敗しました");
+  return await res.json();
 }
 
 async function updateRunInDB(runId, run) {
@@ -106,10 +171,6 @@ function nextRunIndex(runs) {
   return Math.max(runs.length, ...runs.map(r => r.runIndex || 0)) + 1;
 }
 
-async function fetchInProgressEvent() {
-  const res = await fetch(`${API_URL}/api/events/in-progress`);
-  return res.ok ? await res.json() : null;
-}
 
 // --- 編集モード用（一括保存・従来通り） ---
 async function createRunInNotion(run, eventPageId, runIndex) {
@@ -126,12 +187,9 @@ async function createRunInNotion(run, eventPageId, runIndex) {
   });
 }
 
-async function updateEventInNotion(eventPageId, totalRuns, totalWins, totalLosses, gemBalance) {
-  await fetch(`${API_URL}/api/events/${eventPageId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ totalRuns, totalWins, totalLosses, gemBalance }),
-  });
+// イベントの集計値をサーバー側で再計算させる
+async function updateEventInNotion(eventPageId) {
+  await fetch(`${API_URL}/api/events/${eventPageId}`, { method: "PUT" });
 }
 
 async function deleteRunFromDB(runId) {
@@ -143,40 +201,212 @@ async function deleteEventFromDB(eventId) {
 }
 
 // ===== HomeScreen =====
-function HomeScreen({ onRecord, onHistory, activeEvent, onResumeEvent }) {
+function fmtSigned(n) { return `${n >= 0 ? "+" : ""}${n.toLocaleString()}`; }
+
+function RunRow({ r, label, onEdit }) {
+  return (
+    <div className="run-item">
+      <span className="run-num" style={{ width: "auto", minWidth: 28 }}>{label}</span>
+      <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
+      <span className="run-prize">{runPrizeText(r)}</span>
+      {onEdit && (
+        <button onClick={() => onEdit(r)}
+          style={{ marginLeft: "auto", background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
+          修正
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HomeScreen({ runs, openEvents, onRecord, onOpenEvent, onEditRun, onStartPeriod, onHistory }) {
+  const today = toJSTDateString();
+  const todayRuns = runs.filter(r => runJSTDate(r) === today);
+  const todaySum = summarizeRuns(todayRuns);
   return (
     <div className="screen">
-      {activeEvent && (
+      <button onClick={onRecord} style={{ width: "100%", padding: "22px 20px", background: "rgba(126,207,255,0.08)", border: "1px solid rgba(126,207,255,0.3)", borderRadius: 14, cursor: "pointer", textAlign: "left", marginBottom: 20 }}>
+        <div style={{ fontSize: 24, marginBottom: 6 }}>🎮</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Runを記録</div>
+        <div style={{ fontSize: 12, color: "#ccc" }}>種別を選んで1Runずつ記録</div>
+      </button>
+
+      {openEvents.length > 0 && (
         <>
-          <div className="section-label">進行中のイベント</div>
-          <div className="card" style={{ borderColor: "rgba(126,207,255,0.25)", marginBottom: 20 }}>
-            <div style={{ fontSize: 13, color: "#7ecfff", marginBottom: 4 }}>{activeEvent.type}</div>
-            <div style={{ fontSize: 11, color: "#ccc", marginBottom: 12 }}>
-              消費: {activeEvent.gemCost.toLocaleString()}ジェム　Run数: {activeEvent.runs.length}
-            </div>
-            <button className="btn-primary" onClick={onResumeEvent}>続きから記録する</button>
-          </div>
-          <div className="divider" />
+          <div className="section-label">進行中の期間イベント</div>
+          {openEvents.map(ev => {
+            const sum = summarizeRuns(runs.filter(r => r.eventId === ev.id));
+            return (
+              <button key={ev.id} className="card" onClick={() => onOpenEvent(ev)}
+                style={{ width: "100%", textAlign: "left", cursor: "pointer", borderColor: "rgba(126,207,255,0.25)", display: "block" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: "#7ecfff", fontWeight: 600 }}>{ev.type}</div>
+                    <div style={{ fontSize: 11, color: "#ccc", marginTop: 2 }}>{ev.date}〜 · {sum.count}Run · {sum.wins}勝{sum.losses}敗</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: sum.balance >= 0 ? "#68d9a4" : "#ff8080" }}>{fmtSigned(sum.balance)}G</div>
+                </div>
+              </button>
+            );
+          })}
+          <div style={{ height: 8 }} />
         </>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 8 }}>
-        <button onClick={onRecord} style={{ width: "100%", padding: "28px 20px", background: "rgba(126,207,255,0.06)", border: "1px solid rgba(126,207,255,0.2)", borderRadius: 14, cursor: "pointer", textAlign: "left" }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>🎮</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>ゲームを記録する</div>
-          <div style={{ fontSize: 12, color: "#ccc" }}>新しいイベントを開始してRunを記録</div>
-        </button>
-        <button onClick={onHistory} style={{ width: "100%", padding: "28px 20px", background: "rgba(104,217,164,0.05)", border: "1px solid rgba(104,217,164,0.18)", borderRadius: 14, cursor: "pointer", textAlign: "left" }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>過去の履歴を見る</div>
-          <div style={{ fontSize: 12, color: "#ccc" }}>DBから戦績を取得して表示</div>
-        </button>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div className="section-label">今日のRun（{todayRuns.length}）</div>
+        {todayRuns.length > 0 && (
+          <div style={{ fontSize: 11, color: todaySum.balance >= 0 ? "#68d9a4" : "#ff8080" }}>{fmtSigned(todaySum.balance)}G</div>
+        )}
+      </div>
+      {todayRuns.length === 0
+        ? <div style={{ color: "#999", fontSize: 12, padding: "8px 0 16px" }}>まだ記録がありません</div>
+        : <div className="run-list" style={{ marginBottom: 16 }}>
+            {todayRuns.map(r => <RunRow key={r.id} r={r} label={r.eventType} onEdit={onEditRun} />)}
+          </div>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button className="btn" style={{ flex: 1, padding: "14px 10px", fontSize: 13 }} onClick={onStartPeriod}>🏁 期間イベントを開始</button>
+        <button className="btn" style={{ flex: 1, padding: "14px 10px", fontSize: 13 }} onClick={onHistory}>📊 履歴を見る</button>
       </div>
     </div>
   );
 }
 
+// ===== TypePicker（Run入力画面上部の種別切替） =====
+function TypePicker({ types, value, onChange, fixed, note, pc }) {
+  const chip = (t) => {
+    const active = t === value;
+    return pc
+      ? <button key={t} className={`pcd-preset-btn ${active ? "pcd-preset-active" : ""}`} onClick={() => onChange(t)}>{t}</button>
+      : <button key={t} className={`btn ${active ? "btn-selected" : ""}`} style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => onChange(t)}>{t}</button>;
+  };
+  const info = note
+    ? <div style={{ fontSize: 11, color: pc ? "#4f46e5" : "#7ecfff", marginTop: 8, whiteSpace: "pre-line" }}>{note}</div>
+    : null;
+  if (pc) {
+    return (
+      <div className="pcd-form-card" style={{ marginBottom: 16 }}>
+        <span className="pcd-form-label">種別</span>
+        {fixed ? <div style={{ fontWeight: 600 }}>{value}</div> : <div className="pcd-preset-row" style={{ flexWrap: "wrap" }}>{types.map(chip)}</div>}
+        {info}
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <div className="section-label">種別</div>
+      {fixed
+        ? <div style={{ fontSize: 14, fontWeight: 600, color: "#7ecfff" }}>{value}</div>
+        : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{types.map(chip)}</div>}
+      {info}
+    </div>
+  );
+}
+
+// ===== 履歴（月別タブ） =====
+function MonthlyView({ runs, sel, setSel, onEditRun }) {
+  const groups = groupRunsByMonthType(runs);
+  const [openMonths, setOpenMonths] = useState(() => new Set(groups.length ? [groups[0][0]] : []));
+  const toggle = (k) => setOpenMonths(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  if (sel) {
+    const g = groups.find(([m]) => m === sel.month)?.[1].find(x => x.type === sel.type);
+    const rs = g ? [...g.runs].sort((a, b) => (a.playedAt || "").localeCompare(b.playedAt || "")) : [];
+    const sum = summarizeRuns(rs);
+    return (
+      <div>
+        <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={() => setSel(null)}>← 月別に戻る</button>
+        <div className="section-label">{monthLabel(sel.month)}</div>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>{sel.type}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div className="summary-card"><div className="summary-val">{sum.count}</div><div className="summary-key">Runs</div></div>
+          <div className="summary-card"><div className="summary-val">{sum.wins}-{sum.losses}</div><div className="summary-key">勝敗</div></div>
+          <div className="summary-card"><div className="summary-val" style={{ color: "#ffcb6b" }}>{sum.winRate !== null ? `${sum.winRate}%` : "—"}</div><div className="summary-key">勝率</div></div>
+        </div>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {[["総消費", -sum.cost, "#ff8080"], ["総獲得", sum.prize, "#68d9a4"], ["収支", sum.balance, sum.balance >= 0 ? "#68d9a4" : "#ff8080"]].map(([k, v, c]) => (
+              <div key={k} style={{ textAlign: "center", flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: c }}>{fmtSigned(v)}</div>
+                <div className="strip-yen">≈ {formatYen(v)}</div>
+                <div style={{ fontSize: 9, color: "#bbb", marginTop: 2 }}>{k}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="section-label">Run一覧</div>
+        <div className="run-list">
+          {rs.map(r => <RunRow key={r.id} r={r} label={runJSTDate(r).slice(5).replace("-", "/")} onEdit={onEditRun} />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!groups.length) return <div style={{ color: "#ccc", fontSize: 13, textAlign: "center", padding: "20px 0" }}>履歴がありません</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {groups.map(([m, types]) => {
+        const isOpen = openMonths.has(m);
+        const total = summarizeRuns(types.flatMap(t => t.runs));
+        return (
+          <div key={m}>
+            <button onClick={() => toggle(m)}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(126,207,255,0.06)", border: "1px solid rgba(126,207,255,0.18)",
+                borderRadius: isOpen ? "10px 10px 0 0" : 10, padding: "12px 16px", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 10, color: "#7ecfff" }}>{isOpen ? "▼" : "▶"}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#e0e0e0" }}>{monthLabel(m)}</span>
+                <span style={{ fontSize: 11, color: "#bbb" }}>{total.count}Run</span>
+                {total.winRate !== null && <span style={{ fontSize: 11, color: "#ffcb6b" }}>{total.winRate}%</span>}
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: total.balance >= 0 ? "#68d9a4" : "#ff8080" }}>{fmtSigned(total.balance)}G</span>
+            </button>
+            {isOpen && (
+              <div style={{ border: "1px solid rgba(126,207,255,0.18)", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                {types.map((t, i) => (
+                  <button key={t.type} onClick={() => setSel({ month: m, type: t.type })}
+                    style={{ width: "100%", textAlign: "left", padding: "12px 16px", background: "rgba(255,255,255,0.02)",
+                      border: "none", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none", cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{t.type}</div>
+                        <div style={{ fontSize: 11, color: "#bbb", marginTop: 2 }}>
+                          {t.count}Run ・ {t.wins}勝{t.losses}敗{t.winRate !== null ? ` ・ ${t.winRate}%` : ""}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: t.balance >= 0 ? "#68d9a4" : "#ff8080" }}>{fmtSigned(t.balance)}G</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HistoryHub({ tab, setTab, runs, monthSel, setMonthSel, onBack, onEditEvent, onEditRun }) {
+  return (
+    <div className="screen">
+      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← ホーム</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[["month", "月別"], ["event", "イベント"]].map(([k, l]) => (
+          <button key={k} className={`btn ${tab === k ? "btn-selected" : ""}`} style={{ flex: 1, padding: "10px" }} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+      {tab === "month"
+        ? <MonthlyView runs={runs} sel={monthSel} setSel={setMonthSel} onEditRun={onEditRun} />
+        : <HistoryScreen embedded onEditEvent={onEditEvent} />}
+    </div>
+  );
+}
+
 // ===== RecordMenuScreen =====
-function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, eventTypes, onManageTypes, isSyncing }) {
+function RecordMenuScreen({ onNewEvent, onBack, eventTypes, onManageTypes, isSyncing }) {
   const [showMore, setShowMore] = useState(false);
   const mainTypes = eventTypes.slice(0, 5);
   const moreTypes = eventTypes.slice(5);
@@ -209,21 +439,11 @@ function RecordMenuScreen({ onNewEvent, onBack, activeEvent, onResumeEvent, even
   return (
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
-      {activeEvent && (
-        <>
-          <div className="section-label">進行中のイベント</div>
-          <div className="card" style={{ borderColor: "rgba(126,207,255,0.2)", marginBottom: 16 }}>
-            <div style={{ fontSize: 13, color: "#7ecfff", marginBottom: 4 }}>{activeEvent.type}</div>
-            <div style={{ fontSize: 11, color: "#ccc", marginBottom: 12 }}>
-              消費: {activeEvent.gemCost.toLocaleString()}ジェム　Run数: {activeEvent.runs.length}
-            </div>
-            <button className="btn-primary" onClick={onResumeEvent}>続きから記録する</button>
-          </div>
-          <div className="divider" />
-        </>
-      )}
+      <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.6, marginBottom: 16 }}>
+        アリーナダイレクトなど、Run数をまとめて数えたいイベントを開始します。開始中は、同じ種別のRunが自動でこのイベントに追加されます。
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div className="section-label" style={{ marginBottom: 0 }}>新しいイベント</div>
+        <div className="section-label" style={{ marginBottom: 0 }}>期間イベントを開始</div>
         <button className="btn" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onManageTypes}>⚙ 管理</button>
       </div>
       {isSyncing && <div style={{ textAlign: "center", color: "#7ecfff", fontSize: 13, marginBottom: 12, padding: "8px", background: "rgba(126,207,255,0.06)", borderRadius: 8 }}>作成中...</div>}
@@ -426,7 +646,7 @@ function monthLabel(key) {
   return `${y}年${parseInt(m)}月`;
 }
 
-function HistoryScreen({ onBack, onEditEvent }) {
+function HistoryScreen({ onBack, onEditEvent, embedded }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -489,7 +709,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
   if (selectedEvent) {
     const balance = selectedEvent.gemBalance || 0;
     return (
-      <div className="screen">
+      <div className={embedded ? "" : "screen"}>
         <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }}
           onClick={() => setSelectedEvent(null)}>← 一覧に戻る</button>
         <div className="section-label">{selectedEvent.type}</div>
@@ -585,8 +805,8 @@ function HistoryScreen({ onBack, onEditEvent }) {
   const groups = groupByMonth(events);
 
   return (
-    <div className="screen">
-      <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
+    <div className={embedded ? "" : "screen"}>
+      {!embedded && <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>}
       <div className="section-label">過去のイベント</div>
       {loading ? (
         <div style={{ color: "#ccc", fontSize: 13, padding: "20px 0", textAlign: "center" }}>取得中...</div>
@@ -657,7 +877,7 @@ function HistoryScreen({ onBack, onEditEvent }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
+function RunEntryScreen({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
   // initialRun があれば既存Runの修正モード（登録済みの値で初期化）
   const [wins, setWins] = useState(initialRun?.wins ?? null);
   const [losses, setLosses] = useState(initialRun?.losses ?? null);
@@ -723,8 +943,9 @@ function RunEntryScreen({ runIndex, initialRun, onSave, onDelete, onBack, boxTyp
     <div className="screen">
       <button className="btn" style={{ marginBottom: 16, padding: "8px 12px", fontSize: 12 }} onClick={onBack}>← 戻る</button>
       <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "Cinzel, serif", color: "#7ecfff", marginBottom: 20 }}>
-        RUN #{runIndex}{initialRun && <span style={{ fontSize: 14, color: "#ffcb6b", marginLeft: 10, fontFamily: "inherit" }}>修正</span>}
+        RUN{runIndex ? ` #${runIndex}` : ""}{initialRun && <span style={{ fontSize: 14, color: "#ffcb6b", marginLeft: 10, fontFamily: "inherit" }}>修正</span>}
       </div>
+      {header}
       <div className="card">
         <div className="section-label">勝利数</div>
         <div className="wins-grid">
@@ -967,7 +1188,7 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, on
       <button className="btn mt-8"
         style={{ width: "100%", padding: "14px", color: "#ffcb6b", borderColor: "rgba(255,203,107,0.3)", marginTop: 8 }}
         onClick={onFinish} disabled={isSyncing}>
-        {isSyncing ? "保存中..." : event.isEditing ? "変更を保存" : "イベント終了 → DBに保存"}
+        {isSyncing ? "保存中..." : event.isEditing ? "変更を保存" : "期間イベントを終了"}
       </button>
     </div>
   );
@@ -1193,7 +1414,7 @@ const styles = `
     .pcd-preview-row span:last-child { font-weight: 600; color: #0f172a; text-align: right; }
     .pcd-mini-row { display: flex; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
     .pcd-mini-row:last-child { border-bottom: none; }
-    .pcd-mini-num { color: #94a3b8; width: 22px; flex-shrink: 0; }
+    .pcd-mini-num { color: #94a3b8; min-width: 22px; flex-shrink: 0; margin-right: 4px; }
     .pcd-mini-wins { font-weight: 600; color: #1e293b; width: 60px; flex-shrink: 0; }
     .pcd-yen { display: block; text-align: right; font-size: 11px; font-weight: 400; color: #64748b; margin-top: 1px; }
     .pcd-mini-prize { color: #64748b; flex: 1; }
@@ -1207,18 +1428,21 @@ const styles = `
 `;
 
 // ===== PCRecordSetup =====
-function PCRecordSetup({ eventTypes, onNewEvent, setScreen, activeEvent, isSyncing }) {
+function PCRecordSetup({ eventTypes, onNewEvent, setScreen, openEvents, onOpenEvent, isSyncing }) {
   return (
     <div>
       <div className="pcd-page-header">
-        <div className="pcd-page-title">新しいイベントを記録</div>
+        <div className="pcd-page-title">期間イベントを開始</div>
       </div>
-      {activeEvent && (
-        <div className="pcd-resume-banner">
-          <span>進行中のイベント: {activeEvent.type}（{activeEvent.runs.length} Run）</span>
-          <button onClick={() => setScreen("summary")}>続きから記録する →</button>
+      <div className="pcd-form-hint" style={{ marginBottom: 16, maxWidth: 560 }}>
+        アリーナダイレクトなど、Run数をまとめて数えたいイベントを開始します。開始中は、同じ種別のRunが自動でこのイベントに追加されます。
+      </div>
+      {openEvents.map(ev => (
+        <div key={ev.id} className="pcd-resume-banner">
+          <span>進行中: {ev.type}（{ev.date}〜）</span>
+          <button onClick={() => onOpenEvent(ev)}>開く →</button>
         </div>
-      )}
+      ))}
       {isSyncing && (
         <div style={{ marginBottom: 16, color: "#4f46e5", fontSize: 13, padding: "12px 16px", background: "#eef2ff", borderRadius: 8 }}>
           イベント作成中...
@@ -1489,7 +1713,7 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEdit
               </span>
             </div>
             <button className="pcd-primary-btn" onClick={onFinish} disabled={isSyncing}>
-              {isSyncing?"保存中...":event.isEditing?"変更を保存":"イベント終了 → DB保存"}
+              {isSyncing?"保存中...":event.isEditing?"変更を保存":"期間イベントを終了"}
             </button>
           </div>
         </div>
@@ -1499,7 +1723,7 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEdit
 }
 
 // ===== PCRunEntry =====
-function PCRunEntry({ runIndex, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
+function PCRunEntry({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
   const [wins, setWins] = useState(initialRun?.wins ?? null);
   const [losses, setLosses] = useState(initialRun?.losses ?? null);
   const [prizeType, setPrizeType] = useState(initialRun?.prizeType ?? null);
@@ -1546,9 +1770,10 @@ function PCRunEntry({ runIndex, initialRun, onSave, onDelete, onBack, boxType, b
     <div>
       <button className="pcd-back-btn" onClick={onBack}>← キャンセル</button>
       <div className="pcd-page-header">
-        <div className="pcd-page-title">Run #{runIndex}{initialRun && <span style={{fontSize:14,color:"#d97706",marginLeft:10}}>修正</span>}</div>
+        <div className="pcd-page-title">Run{runIndex ? ` #${runIndex}` : ""}{initialRun && <span style={{fontSize:14,color:"#d97706",marginLeft:10}}>修正</span>}</div>
         {autoFilled && <div className="pcd-autofill-badge">前回と同じ報酬を自動入力</div>}
       </div>
+      {header}
       <div className="pcd-run-layout">
         {/* Left: wins + losses */}
         <div className="pcd-form-card">
@@ -1629,8 +1854,8 @@ function PCRunEntry({ runIndex, initialRun, onSave, onDelete, onBack, boxType, b
         </div>
         {/* 補助情報: これまでのRun履歴 */}
         <div className="pcd-history-panel pcd-form-card">
-          <span className="pcd-form-label">これまでのRun</span>
-          {hasPrev ? previousRuns.map((r,i)=>{
+          <span className="pcd-form-label">{header ? "同じ種別の直近Run" : "これまでのRun"}</span>
+          {hasPrev ? (header ? previousRuns.slice(0,10) : previousRuns).map((r,i)=>{
             const prize=PRIZE_TYPES.find(p=>p.id===r.prizeType);
             let pt=prize?.label||"";
             if(r.prizeType==="ジェム") pt+=` ${r.prizeGem.toLocaleString()}G`;
@@ -1638,7 +1863,7 @@ function PCRunEntry({ runIndex, initialRun, onSave, onDelete, onBack, boxType, b
             if(r.hasRight) pt+=" 🏆";
             return (
               <div key={i} className="pcd-mini-row">
-                <span className="pcd-mini-num">#{i+1}</span>
+                <span className="pcd-mini-num">{header ? runJSTDate(r).slice(5).replace("-","/") : `#${i+1}`}</span>
                 <span className="pcd-mini-wins">{r.wins}勝{r.losses!=null?` ${r.losses}敗`:""}</span>
                 <span className="pcd-mini-prize">{prize?.icon} {pt}</span>
               </div>
@@ -1740,11 +1965,100 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
 }
 
 // ===== PCDemo（実データ PC画面） =====
-function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewEvent, onSaveRun, onFinish, onDeleteRun, onEditRun, runEntryProps, editingRunIndex, isSyncing, onSaveEventTypes, onEditEvent, isRestoringEvent }) {
+function PCRunTable({ runs, labelOf, onEditRun }) {
+  return (
+    <div className="pcd-table">
+      <div className="pcd-table-head" style={{ gridTemplateColumns: "150px 90px 1fr 100px 56px" }}>
+        <span></span><span>成績</span><span>プライズ</span><span style={{ textAlign: "right" }}>収支</span><span></span>
+      </div>
+      {runs.length === 0 ? <div className="pcd-loading">Runがありません</div> : runs.map(r => {
+        const bal = runGemBalance(r);
+        return (
+          <div key={r.id} className="pcd-table-row" style={{ gridTemplateColumns: "150px 90px 1fr 100px 56px" }}>
+            <span style={{ color: "#64748b", fontSize: 12 }}>{labelOf(r)}</span>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{r.wins}勝 {r.losses}敗</span>
+            <span style={{ color: "#475569", fontSize: 13 }}>{runPrizeText(r)}</span>
+            <span className={`pcd-ev-balance ${bal >= 0 ? "pos" : "neg"}`} style={{ textAlign: "right" }}>{fmtSigned(bal)} G</span>
+            <button onClick={() => onEditRun(r)} style={{ background: "none", border: "1px solid #fcd34d", borderRadius: 6, color: "#d97706", cursor: "pointer", fontSize: 12, padding: "2px 8px" }}>修正</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PCMonthly({ runs, sel, setSel, onEditRun }) {
+  const groups = groupRunsByMonthType(runs);
+  if (sel) {
+    const g = groups.find(([m]) => m === sel.month)?.[1].find(x => x.type === sel.type);
+    const rs = g ? [...g.runs].sort((a, b) => (a.playedAt || "").localeCompare(b.playedAt || "")) : [];
+    const sum = summarizeRuns(rs);
+    return (
+      <div>
+        <button className="pcd-back-btn" onClick={() => setSel(null)}>← 月別に戻る</button>
+        <div className="pcd-page-header">
+          <div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>{monthLabel(sel.month)}</div>
+            <div className="pcd-page-title">{sel.type}</div>
+          </div>
+        </div>
+        <div className="pcd-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+          {[
+            { val: fmtSigned(sum.balance) + " G", cls: sum.balance >= 0 ? "pos" : "neg", label: "ジェム収支", yen: formatYen(sum.balance) },
+            { val: sum.winRate !== null ? sum.winRate + "%" : "—", cls: "", label: "勝率" },
+            { val: `${sum.wins}-${sum.losses}`, cls: "", label: "勝敗" },
+            { val: "-" + sum.cost.toLocaleString() + " G", cls: "neg", label: "総消費", yen: formatYen(-sum.cost) },
+            { val: sum.count, cls: "", label: "Run数" },
+          ].map(x => (
+            <div key={x.label} className="pcd-stat">
+              <div className={`pcd-stat-val ${x.cls}`}>{x.val}</div>
+              {x.yen && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>≈ {x.yen}</div>}
+              <div className="pcd-stat-key">{x.label}</div>
+            </div>
+          ))}
+        </div>
+        <PCRunTable runs={rs} labelOf={r => runJSTDate(r)} onEditRun={onEditRun} />
+      </div>
+    );
+  }
+  if (!groups.length) return <div className="pcd-loading">履歴がありません</div>;
+  const cols = "1fr 90px 110px 80px 130px";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {groups.map(([m, types]) => {
+        const total = summarizeRuns(types.flatMap(t => t.runs));
+        return (
+          <div key={m} className="pcd-table">
+            <div className="pcd-table-head" style={{ gridTemplateColumns: cols }}>
+              <span style={{ color: "#0f172a", fontWeight: 700 }}>{monthLabel(m)}</span>
+              <span>{total.count} Run</span><span>{total.wins}勝 {total.losses}敗</span>
+              <span>{total.winRate !== null ? total.winRate + "%" : "—"}</span>
+              <span className={`pcd-ev-balance ${total.balance >= 0 ? "pos" : "neg"}`}>{fmtSigned(total.balance)} G</span>
+            </div>
+            {types.map(t => (
+              <div key={t.type} className="pcd-table-row" style={{ gridTemplateColumns: cols, cursor: "pointer" }}
+                onClick={() => setSel({ month: m, type: t.type })}>
+                <span className="pcd-ev-name">{t.type}</span>
+                <span className="pcd-ev-runs">{t.count} Run</span>
+                <span className="pcd-ev-record">{t.wins}勝 {t.losses}敗</span>
+                <span className="pcd-ev-wr">{t.winRate !== null ? t.winRate + "%" : "—"}</span>
+                <span className={`pcd-ev-balance ${t.balance >= 0 ? "pos" : "neg"}`}>{fmtSigned(t.balance)} G</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PCDemo({ screen, setScreen, refreshKey, eventTypes, runs, openEvents, activeEvent, entryKey, onRecord, onOpenEvent,
+                  onNewEvent, onFinish, onDeleteRun, onEditRunIndex, onEditRun, runEntryProps, onAddRun, onSummaryBack,
+                  isSyncing, onSaveEventTypes, onEditEvent, isLoading, historyTab, setHistoryTab, monthSel, setMonthSel }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [runs, setRuns] = useState([]);
+  const [eventRuns, setEventRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
 
   const fetchEvents = useCallback(async () => {
@@ -1759,16 +2073,14 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 
   useEffect(() => { fetchEvents(); }, [fetchEvents, refreshKey]);
 
-  const fetchRuns = async (eventId) => {
-    setRunsLoading(true);
+  const handleSelectEvent = async (ev) => {
+    setSelectedEvent(ev); setEventRuns([]); setRunsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/runs/${eventId}`);
-      setRuns(await res.json());
-    } catch { setRuns([]); }
+      const res = await fetch(`${API_URL}/api/runs/${ev.id}`);
+      setEventRuns(await res.json());
+    } catch { setEventRuns([]); }
     finally { setRunsLoading(false); }
   };
-
-  const handleSelectEvent = (ev) => { setSelectedEvent(ev); setRuns([]); fetchRuns(ev.id); };
 
   const handleDeleteEvent = async (ev) => {
     await deleteEventFromDB(ev.id);
@@ -1776,26 +2088,21 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
     setSelectedEvent(null);
   };
 
-  const thisMonth = toJSTDateString().slice(0, 7);
-  const monthEvents = events.filter(e => (e.date || "").startsWith(thisMonth));
-  const monthBalance = monthEvents.reduce((s, e) => s + (e.gemBalance || 0), 0);
-  const monthWins    = monthEvents.reduce((s, e) => s + (e.totalWins || 0), 0);
-  const monthLosses  = monthEvents.reduce((s, e) => s + (e.totalLosses || 0), 0);
-  const winRate = (monthWins + monthLosses) > 0 ? Math.round(monthWins / (monthWins + monthLosses) * 100) : null;
-  const monthRuns = monthEvents.reduce((s, e) => s + (e.totalRuns || 0), 0);
+  const today = toJSTDateString();
+  const thisMonth = today.slice(0, 7);
+  const month = summarizeRuns(runs.filter(r => runJSTDate(r).startsWith(thisMonth)));
+  const todayRuns = runs.filter(r => runJSTDate(r) === today);
   const [yr, mo] = thisMonth.split("-");
 
-  // ナビのアクティブ判定
-  const navActive = ["record","summary","run","manage-types"].includes(screen) ? "record"
-    : ["history"].includes(screen) ? "history" : "home";
-
+  const navActive = ["record", "summary", "manage-types"].includes(screen) ? "record"
+    : screen === "history" ? "history" : screen === "run" ? "run" : "home";
   const navItems = [
     { label: "ホーム", key: "home" },
-    { label: "ゲームを記録する", key: "record" },
-    { label: "過去の履歴", key: "history" },
+    { label: "期間イベント", key: "record" },
+    { label: "履歴", key: "history" },
   ];
 
-  const EventTable = ({ evs, clickable }) => {
+  const EventTable = ({ evs }) => {
     if (loading) return <div className="pcd-loading">読み込み中...</div>;
     if (!evs.length) return <div className="pcd-loading">データがありません</div>;
     return (
@@ -1809,17 +2116,14 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
           const wr2 = (tw + tl) > 0 ? Math.round(tw / (tw + tl) * 100) : null;
           const bal = ev.gemBalance || 0;
           return (
-            <div key={ev.id} className="pcd-table-row" onClick={() => clickable && handleSelectEvent(ev)}
-              style={{ cursor: clickable ? "pointer" : "default" }}>
+            <div key={ev.id} className="pcd-table-row" onClick={() => handleSelectEvent(ev)} style={{ cursor: "pointer" }}>
               <span className="pcd-ev-name">{ev.type}</span>
               <span className="pcd-ev-date">{ev.date}</span>
               <span className="pcd-ev-record">
                 {tw}勝 {tl}敗{wr2 !== null ? <><span> </span><span className="pcd-ev-wr">{wr2}%</span></> : ""}
               </span>
               <span className="pcd-ev-runs">{ev.totalRuns || 0} Run</span>
-              <span className={`pcd-ev-balance ${bal >= 0 ? "pos" : "neg"}`}>
-                {bal >= 0 ? "+" : ""}{bal.toLocaleString()} G
-              </span>
+              <span className={`pcd-ev-balance ${bal >= 0 ? "pos" : "neg"}`}>{fmtSigned(bal)} G</span>
             </div>
           );
         })}
@@ -1840,103 +2144,106 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
             </span>
           ))}
         </div>
-        <span className="pcd-nav-cta" onClick={() => setScreen(activeEvent ? "run" : "record")}>＋ 新しいRun</span>
+        <span className="pcd-nav-cta" onClick={onRecord}>＋ Runを記録</span>
       </nav>
 
       <main className="pcd-main">
-        {/* ホーム */}
-        {screen === "home" && isRestoringEvent && (
-          <div className="pcd-loading">読み込み中...</div>
-        )}
-        {screen === "home" && !isRestoringEvent && <>
+        {screen === "home" && isLoading && <div className="pcd-loading">読み込み中...</div>}
+        {screen === "home" && !isLoading && <>
           <div className="pcd-page-header">
             <div className="pcd-page-title">ダッシュボード</div>
             <div className="pcd-page-sub">{yr}年{parseInt(mo)}月</div>
           </div>
           <div className="pcd-stats">
             {[
-              { val: loading ? "…" : (monthBalance >= 0 ? "+" : "") + monthBalance.toLocaleString() + " G", cls: loading ? "" : monthBalance >= 0 ? "pos" : "neg", label: "今月のジェム収支" },
-              { val: loading ? "…" : winRate !== null ? winRate + "%" : "—", cls: "", label: "今月の勝率" },
-              { val: loading ? "…" : String(monthWins + monthLosses), cls: "", label: "今月の総対戦数" },
-              { val: loading ? "…" : String(monthRuns), cls: "", label: "今月のRun数" },
-            ].map(s => (
-              <div key={s.label} className="pcd-stat">
-                <div className={`pcd-stat-val ${s.cls}`}>{s.val}</div>
-                <div className="pcd-stat-key">{s.label}</div>
+              { val: fmtSigned(month.balance) + " G", cls: month.balance >= 0 ? "pos" : "neg", label: "今月のジェム収支" },
+              { val: month.winRate !== null ? month.winRate + "%" : "—", cls: "", label: "今月の勝率" },
+              { val: String(month.wins + month.losses), cls: "", label: "今月の総対戦数" },
+              { val: String(month.count), cls: "", label: "今月のRun数" },
+            ].map(x => (
+              <div key={x.label} className="pcd-stat">
+                <div className={`pcd-stat-val ${x.cls}`}>{x.val}</div>
+                <div className="pcd-stat-key">{x.label}</div>
               </div>
             ))}
           </div>
           <div className="pcd-actions">
-            <div className="pcd-action pcd-action-primary" onClick={() => setScreen(activeEvent ? "run" : "record")}>
+            <div className="pcd-action pcd-action-primary" onClick={onRecord}>
               <div className="pcd-action-icon">🎮</div>
-              <div className="pcd-action-title">ゲームを記録する</div>
-              <div className="pcd-action-desc">新しいイベントを開始してRunを記録</div>
+              <div className="pcd-action-title">Runを記録</div>
+              <div className="pcd-action-desc">種別を選んで1Runずつ記録</div>
             </div>
-            <div className="pcd-action" onClick={() => setScreen("history")}>
-              <div className="pcd-action-icon">📊</div>
-              <div className="pcd-action-title">過去の履歴を見る</div>
-              <div className="pcd-action-desc">過去のイベントと戦績を確認</div>
+            <div className="pcd-action" onClick={() => setScreen("record")}>
+              <div className="pcd-action-icon">🏁</div>
+              <div className="pcd-action-title">期間イベントを開始</div>
+              <div className="pcd-action-desc">アリーナダイレクト等のRunをまとめて集計</div>
             </div>
           </div>
+          {openEvents.length > 0 && <>
+            <div className="pcd-section-header"><div className="pcd-section-title">進行中の期間イベント</div></div>
+            <div className="pcd-table" style={{ marginBottom: 24 }}>
+              {openEvents.map(ev => {
+                const sum = summarizeRuns(runs.filter(r => r.eventId === ev.id));
+                return (
+                  <div key={ev.id} className="pcd-table-row" style={{ cursor: "pointer" }} onClick={() => onOpenEvent(ev)}>
+                    <span className="pcd-ev-name">{ev.type}</span>
+                    <span className="pcd-ev-date">{ev.date}〜</span>
+                    <span className="pcd-ev-record">{sum.wins}勝 {sum.losses}敗</span>
+                    <span className="pcd-ev-runs">{sum.count} Run</span>
+                    <span className={`pcd-ev-balance ${sum.balance >= 0 ? "pos" : "neg"}`}>{fmtSigned(sum.balance)} G</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>}
           <div className="pcd-section-header">
-            <div className="pcd-section-title">最近のイベント</div>
-            <span className="pcd-section-link" onClick={() => setScreen("history")}>すべて見る →</span>
+            <div className="pcd-section-title">今日のRun（{todayRuns.length}）</div>
+            <span className="pcd-section-link" onClick={() => setScreen("history")}>履歴を見る →</span>
           </div>
-          <EventTable evs={events.slice(0, 5)} clickable={false} />
+          <PCRunTable runs={todayRuns} labelOf={r => r.eventType} onEditRun={onEditRun} />
         </>}
 
-        {/* 記録: イベント選択 */}
         {screen === "record" && (
-          <PCRecordSetup
-            eventTypes={eventTypes}
-            onNewEvent={onNewEvent}
-            setScreen={setScreen}
-            activeEvent={activeEvent}
-            isSyncing={isSyncing}
-          />
+          <PCRecordSetup eventTypes={eventTypes} onNewEvent={onNewEvent} setScreen={setScreen}
+            openEvents={openEvents} onOpenEvent={onOpenEvent} isSyncing={isSyncing} />
         )}
 
-        {/* 記録: イベントタイプ管理 */}
         {screen === "manage-types" && (
-          <PCEventTypeManager
-            eventTypes={eventTypes}
-            onSave={onSaveEventTypes}
-            setScreen={setScreen}
-          />
+          <PCEventTypeManager eventTypes={eventTypes} onSave={onSaveEventTypes} setScreen={setScreen} />
         )}
 
-        {/* 記録: イベントサマリー */}
         {screen === "summary" && activeEvent && (
           <PCEventSummary
             event={activeEvent}
-            onAddRun={() => setScreen("run")}
+            onAddRun={onAddRun}
             onFinish={onFinish}
-            onBack={() => { if (activeEvent.isEditing) { setScreen("history"); } else setScreen("home"); }}
+            onBack={onSummaryBack}
             onDeleteRun={onDeleteRun}
-            onEditRun={onEditRun}
+            onEditRun={onEditRunIndex}
             isSyncing={isSyncing}
           />
         )}
 
-        {/* 記録: Run入力 */}
-        {screen === "run" && activeEvent && (
-          <PCRunEntry key={editingRunIndex ?? "new"} {...runEntryProps} />
-        )}
+        {screen === "run" && runEntryProps && <PCRunEntry key={entryKey} {...runEntryProps} header={runEntryProps.pcHeader} />}
 
-        {/* 履歴 */}
         {screen === "history" && !selectedEvent && <>
           <div className="pcd-page-header">
-            <div className="pcd-page-title">過去の履歴</div>
-            <div className="pcd-page-sub">全{loading ? "…" : events.length}件</div>
+            <div className="pcd-page-title">履歴</div>
+            <div className="pcd-preset-row">
+              {[["month", "月別"], ["event", "イベント"]].map(([k, l]) => (
+                <button key={k} className={`pcd-preset-btn ${historyTab === k ? "pcd-preset-active" : ""}`} onClick={() => setHistoryTab(k)}>{l}</button>
+              ))}
+            </div>
           </div>
-          <EventTable evs={events} clickable={true} />
+          {historyTab === "month"
+            ? <PCMonthly runs={runs} sel={monthSel} setSel={setMonthSel} onEditRun={onEditRun} />
+            : <EventTable evs={events} />}
         </>}
 
-        {/* 履歴: イベント詳細 */}
         {screen === "history" && selectedEvent && (
           <PCEventDetail
             event={selectedEvent}
-            runs={runs}
+            runs={eventRuns}
             runsLoading={runsLoading}
             onBack={() => setSelectedEvent(null)}
             onEdit={onEditEvent}
@@ -1949,51 +2256,84 @@ function PCDemo({ screen, setScreen, refreshKey, eventTypes, activeEvent, onNewE
 }
 
 // ===== MAIN APP =====
+function loadLastType() {
+  try { return localStorage.getItem("mtg-lastRunType") || null; } catch { return null; }
+}
+
 export default function App() {
-  const [activeEvent, setActiveEvent] = useState(null);
+  const [runs, setRuns] = useState([]);              // 全Run（新しい順）
+  const [openEvents, setOpenEvents] = useState([]);  // 進行中の期間イベント
+  const [isLoading, setIsLoading] = useState(true);
+  const [summaryEventId, setSummaryEventId] = useState(null); // サマリー表示中の期間イベント
+  const [editingEvent, setEditingEvent] = useState(null);     // 履歴から編集中のイベント（ローカル編集→まとめて保存）
+  // Run入力画面の状態: {mode:"new",type,fixed,returnTo} | {mode:"edit",run,returnTo} | {mode:"add-local"} | {mode:"edit-local",index}
+  const [entry, setEntry] = useState(null);
   const [screen, setScreenRaw] = useState("home");
-  const [isRestoringEvent, setIsRestoringEvent] = useState(true);
   const [eventTypes, setEventTypes] = useState(loadEventTypes);
+  const [lastType, setLastType] = useState(loadLastType);
+  const [historyTab, setHistoryTab] = useState("month");
+  const [monthSel, setMonthSel] = useState(null);
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  // 修正中のRunの位置（activeEvent.runs のインデックス）。null なら新規Run入力
-  const [editingRunIndex, setEditingRunIndex] = useState(null);
-  // 画面遷移のたびに修正モードを解除（ナビ経由で離れた場合も含む）。修正開始時は遷移後に再設定する
-  const setScreen = useCallback((next) => { setEditingRunIndex(null); setScreenRaw(next); }, []);
+  // 画面遷移のたびにRun入力状態を解除（ナビ経由で離れた場合も含む）。Run入力へ入る時は遷移後に再設定する
+  const setScreen = useCallback((next) => { setEntry(null); setScreenRaw(next); }, []);
+
+  const showToast = useCallback((msg, isError = false) => {
+    setToast({ msg, isError });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const reload = useCallback(async () => {
+    const [rs, evs] = await Promise.all([fetchAllRuns(), fetchOpenEvents()]);
+    setRuns(rs);
+    setOpenEvents(evs);
+  }, []);
+
+  useEffect(() => {
+    reload()
+      .catch(() => showToast("データの取得に失敗しました", true))
+      .finally(() => setIsLoading(false));
+  }, [reload, showToast]);
 
   const handleSaveEventTypes = (types) => {
     setEventTypes(types);
     saveEventTypesToStorage(types);
   };
 
-  // 起動時: DB から in_progress イベントを復元
-  useEffect(() => {
-    const restore = async () => {
-      try {
-        localStorage.removeItem("mtg-activeEvent");
-        const event = await fetchInProgressEvent();
-        if (event) {
-          const runsRes = await fetch(`${API_URL}/api/runs/${event.id}`);
-          const runs = runsRes.ok ? await runsRes.json() : [];
-          setActiveEvent({
-            type: event.type, gemCost: event.gemCost,
-            boxType: event.boxType || null, boxName: event.boxName || "",
-            date: event.date, runs,
-            maxLosses: event.maxLosses || 3, maxWins: event.maxWins || 7,
-            eventId: event.id,
-          });
-        }
-      } catch {}
-      finally { setIsRestoringEvent(false); }
-    };
-    restore();
-  }, []);
+  // ----- 種別まわり -----
+  const allTypes = [...new Set([
+    ...openEvents.map(e => e.type),
+    lastType,
+    ...eventTypes.map(t => t.label),
+    ...runs.map(r => r.eventType),
+  ].filter(Boolean))];
 
-  const showToast = useCallback((msg, isError = false) => {
-    setToast({ msg, isError });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
+  const typeCfg = (label) => {
+    const ev = openEvents.find(e => e.type === label);
+    if (ev) return { label, gemCost: ev.gemCost, maxWins: ev.maxWins || 7, maxLosses: ev.maxLosses || 3, boxType: ev.boxType, boxName: ev.boxName || "" };
+    const et = eventTypes.find(t => t.label === label);
+    if (et) return { label, gemCost: et.gemCost || 0, maxWins: et.maxWins || 7, maxLosses: et.maxLosses || 3, boxType: et.boxType || null, boxName: et.boxName || "" };
+    const last = runs.find(r => r.eventType === label);
+    if (last) return { label, gemCost: last.gemCost || 0, maxWins: last.maxWins || 7, maxLosses: last.maxLosses || 3, boxType: null, boxName: "" };
+    return { label, gemCost: 0, maxWins: 7, maxLosses: 3, boxType: null, boxName: "" };
+  };
+
+  // ----- 期間イベント（サマリー表示 / 履歴編集） -----
+  const summaryEvent = openEvents.find(e => e.id === summaryEventId);
+  const activeEvent = editingEvent ?? (summaryEvent ? {
+    type: summaryEvent.type, gemCost: summaryEvent.gemCost,
+    boxType: summaryEvent.boxType || null, boxName: summaryEvent.boxName || "",
+    date: summaryEvent.date, maxLosses: summaryEvent.maxLosses || 3, maxWins: summaryEvent.maxWins || 7,
+    eventId: summaryEvent.id,
+    runs: runs.filter(r => r.eventId === summaryEvent.id).sort((a, b) => (a.runIndex || 0) - (b.runIndex || 0)),
+  } : null);
+
+  const handleOpenEvent = (ev) => {
+    setEditingEvent(null);
+    setSummaryEventId(ev.id);
+    setScreen("summary");
+  };
 
   const handleNewEvent = async (type, gemCost, boxType, boxName, maxLosses, maxWins) => {
     setIsSyncing(true);
@@ -2002,140 +2342,44 @@ export default function App() {
         type, gemCost, toJSTDateString(), maxLosses || 3, maxWins || 7,
         boxType || null, boxName || null
       );
-      setActiveEvent({
-        type, gemCost,
-        boxType: boxType || null, boxName: boxName || "",
-        date: toJSTDateString(),
-        runs: [],
-        maxLosses: maxLosses || 3,
-        maxWins: maxWins || 7,
-        eventId,
-      });
-      setScreen("run");
-    } catch (e) {
+      await reload();
+      setEditingEvent(null);
+      setSummaryEventId(eventId);
+      setScreen("summary");
+    } catch {
       showToast("イベントの作成に失敗しました", true);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleStartEditRun = (index) => {
-    setScreen("run");
-    setEditingRunIndex(index);
-  };
-
-  const handleRunEntryBack = () => {
-    setEditingRunIndex(null);
+  const handleEditEvent = (ev, evRuns) => {
+    setEditingEvent({
+      type: ev.type, gemCost: ev.gemCost, boxType: null, boxName: "", date: ev.date,
+      maxLosses: ev.maxLosses || 3, maxWins: ev.maxWins || 7,
+      runs: evRuns, isEditing: true, eventId: ev.id, deletedRunIds: [],
+    });
     setScreen("summary");
   };
 
-  const handleUpdateRun = async (runData) => {
-    const index = editingRunIndex;
-    const target = activeEvent.runs[index];
-    const replaceRun = (patch) => setActiveEvent(prev => ({
-      ...prev,
-      runs: prev.runs.map((r, i) => i === index ? { ...r, ...runData, ...patch } : r),
-    }));
-    if (activeEvent.isEditing) {
-      // 履歴編集モード: 「変更を保存」時にまとめてDBへ反映する
-      replaceRun(target.id ? { isModified: true } : {});
-      handleRunEntryBack();
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      await updateRunInDB(target.id, runData);
-      replaceRun({});
-      showToast("✓ Runを修正しました");
-      handleRunEntryBack();
-    } catch (e) {
-      showToast("Runの修正に失敗しました。再度お試しください。", true);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleDeleteEditingRun = async () => {
-    const target = activeEvent.runs[editingRunIndex];
-    if (activeEvent.isEditing) {
-      handleDeleteRunFromEdit(target);
-      handleRunEntryBack();
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      const res = await fetch(`${API_URL}/api/runs/${target.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      setActiveEvent(prev => ({ ...prev, runs: prev.runs.filter(r => r !== target) }));
-      showToast("✓ Runを削除しました");
-      handleRunEntryBack();
-    } catch (e) {
-      showToast("Runの削除に失敗しました。再度お試しください。", true);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleSaveRun = async (runData) => {
-    if (editingRunIndex !== null) return handleUpdateRun(runData);
-    if (activeEvent?.isEditing) {
-      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
-      setScreen("summary");
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      const runIndex = nextRunIndex(activeEvent.runs);
-      const runId = await createRunInDB(runData, activeEvent.eventId, runIndex);
-      setActiveEvent(prev => ({ ...prev, runs: [...prev.runs, { ...runData, id: runId, runIndex }] }));
-      setScreen("summary");
-    } catch (e) {
-      showToast("Runの保存に失敗しました。再度お試しください。", true);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleDeleteRunFromEdit = (run) => {
-    setActiveEvent(prev => ({
+    setEditingEvent(prev => ({
       ...prev,
       runs: prev.runs.filter(r => r !== run),
       deletedRunIds: run.id ? [...(prev.deletedRunIds || []), run.id] : (prev.deletedRunIds || []),
     }));
   };
 
-  const handleEditEvent = (ev, runs) => {
-    setActiveEvent({
-      type: ev.type,
-      gemCost: ev.gemCost,
-      boxType: null,
-      boxName: "",
-      date: ev.date,
-      maxLosses: ev.maxLosses || 3,
-      maxWins: ev.maxWins || 7,
-      runs: runs,
-      isEditing: true,
-      eventId: ev.id,
-      deletedRunIds: [],
-    });
-    setScreen("summary");
+  const handleSummaryBack = () => {
+    if (editingEvent) { setEditingEvent(null); setScreen("history"); }
+    else setScreen("home");
   };
 
   const handleFinishEvent = async () => {
     if (!activeEvent) return;
-    const isEditing = activeEvent.isEditing;
+    const isEditing = !!activeEvent.isEditing;
     setIsSyncing(true);
     try {
-      const totalWins = activeEvent.runs.reduce((s, r) => s + r.wins, 0);
-      const totalLosses = activeEvent.runs.reduce((s, r) => s + (r.losses || 0), 0);
-      const totalGemPrize = activeEvent.runs.reduce((s, r) => {
-        if (r.prizeType === "ジェム") return s + r.prizeGem;
-        if (r.prizeType === "PB_BOX" || r.prizeType === "CB_BOX")
-          return s + (BOX_GEM_VALUE[r.prizeType] * (r.prizeBoxCount || 1));
-        return s;
-      }, 0);
-      const gemBalance = totalGemPrize - activeEvent.gemCost * activeEvent.runs.length;
-
       if (isEditing) {
         for (const id of (activeEvent.deletedRunIds || []))
           await deleteRunFromDB(id);
@@ -2146,37 +2390,161 @@ export default function App() {
         const baseIndex = nextRunIndex(existingRuns) - 1;
         for (let i = 0; i < newRuns.length; i++)
           await createRunInNotion(newRuns[i], activeEvent.eventId, baseIndex + i + 1);
-        await updateEventInNotion(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
+        await updateEventInNotion(activeEvent.eventId);
         showToast("✓ 更新しました！");
       } else {
-        // 新規フロー: runs は既に DB 保存済み。complete エンドポイントで統計更新のみ
-        await completeEventInDB(activeEvent.eventId, activeEvent.runs.length, totalWins, totalLosses, gemBalance);
-        showToast("✓ イベントを完了しました！");
+        await completeEventInDB(activeEvent.eventId);
+        showToast("✓ 期間イベントを終了しました");
       }
-    } catch (e) {
+      await reload();
+    } catch {
       showToast("エラーが発生しました", true);
       setIsSyncing(false);
-      return; // activeEvent をクリアしない（in_progress のまま維持）
+      return;
     }
     setIsSyncing(false);
-    setActiveEvent(null);
+    setEditingEvent(null);
+    setSummaryEventId(null);
     setRefreshKey(k => k + 1);
     setScreen(isEditing ? "history" : "home");
   };
 
-  const editingRun = editingRunIndex !== null ? activeEvent?.runs[editingRunIndex] : null;
-  const runEntryProps = activeEvent && {
-    runIndex: editingRun ? editingRunIndex + 1 : activeEvent.runs.length + 1,
-    initialRun: editingRun,
-    onSave: handleSaveRun,
-    onDelete: editingRun ? handleDeleteEditingRun : null,
-    onBack: handleRunEntryBack,
-    boxType: activeEvent.boxType,
-    boxName: activeEvent.boxName || "",
-    maxWins: activeEvent.maxWins || 7,
-    maxLosses: activeEvent.maxLosses || 3,
-    previousRuns: editingRun ? activeEvent.runs.filter(r => r !== editingRun) : activeEvent.runs,
-    isSyncing,
+  // ----- Run入力 -----
+  const openRecord = (type = null, fixed = false, returnTo = "home") => {
+    const t = type || lastType || allTypes[0] || null;
+    setScreen("run");
+    setEntry({ mode: "new", type: t, fixed, returnTo });
+  };
+
+  const handleStartEditRun = (run, returnTo) => {
+    setScreen("run");
+    setEntry({ mode: "edit", run, returnTo });
+  };
+
+  // サマリー画面の「修正」（インデックス指定）
+  const handleSummaryEditRun = (index) => {
+    if (editingEvent) { setScreen("run"); setEntry({ mode: "edit-local", index }); }
+    else handleStartEditRun(activeEvent.runs[index], "summary");
+  };
+
+  const handleSummaryAddRun = () => {
+    if (editingEvent) { setScreen("run"); setEntry({ mode: "add-local" }); }
+    else openRecord(activeEvent.type, true, "summary");
+  };
+
+  const leaveEntry = () => {
+    const back = entry?.returnTo || "summary";
+    setScreen(back);
+  };
+
+  const handleSaveRun = async (runData) => {
+    if (!entry) return;
+    if (entry.mode === "add-local") {
+      setEditingEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
+      leaveEntry();
+      return;
+    }
+    if (entry.mode === "edit-local") {
+      setEditingEvent(prev => ({
+        ...prev,
+        runs: prev.runs.map((r, i) => i === entry.index ? { ...r, ...runData, ...(r.id ? { isModified: true } : {}) } : r),
+      }));
+      leaveEntry();
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      if (entry.mode === "new") {
+        const res = await createRunInDB(runData, typeCfg(entry.type));
+        setLastType(entry.type);
+        try { localStorage.setItem("mtg-lastRunType", entry.type); } catch { /* 保存できなくても動作に影響なし */ }
+        showToast(res.eventId ? "✓ Runを保存しました（期間イベントに追加）" : "✓ Runを保存しました");
+      } else {
+        await updateRunInDB(entry.run.id, runData);
+        showToast("✓ Runを修正しました");
+      }
+      await reload();
+      setRefreshKey(k => k + 1);
+      leaveEntry();
+    } catch {
+      showToast("Runの保存に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteEntryRun = async () => {
+    if (entry.mode === "edit-local") {
+      handleDeleteRunFromEdit(editingEvent.runs[entry.index]);
+      leaveEntry();
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/runs/${entry.run.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      await reload();
+      setRefreshKey(k => k + 1);
+      showToast("✓ Runを削除しました");
+      leaveEntry();
+    } catch {
+      showToast("Runの削除に失敗しました。再度お試しください。", true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Run入力画面に渡すprops（スマホ・PC共通）
+  let runEntryProps = null;
+  let entryKey = "none";
+  if (entry && (entry.mode === "new" || entry.mode === "edit")) {
+    const isEdit = entry.mode === "edit";
+    const type = isEdit ? entry.run.eventType : entry.type;
+    const base = typeCfg(type);
+    const cfg = isEdit
+      ? { ...base, gemCost: entry.run.gemCost ?? base.gemCost, maxWins: entry.run.maxWins || base.maxWins, maxLosses: entry.run.maxLosses || base.maxLosses }
+      : base;
+    const attach = isEdit ? null : openEvents.find(e => e.type === type);
+    const sameType = runs.filter(r => r.eventType === type && (!isEdit || r.id !== entry.run.id));
+    const monthKey = toJSTDateString().slice(0, 7);
+    const runIndex = isEdit ? null
+      : attach ? runs.filter(r => r.eventId === attach.id).length + 1
+      : sameType.filter(r => runJSTDate(r).startsWith(monthKey)).length + 1;
+    const note = isEdit
+      ? `${runJSTDate(entry.run)} のRun`
+      : [
+          `消費 ${(cfg.gemCost || 0).toLocaleString()}G / 最大 ${cfg.maxWins}勝${cfg.maxLosses}敗`,
+          attach ? `→ 期間イベント「${attach.type}（${attach.date}〜）」に追加されます` : `今月 ${runIndex} 回目`,
+        ].join("\n");
+    const pickerProps = {
+      types: allTypes, value: type, fixed: isEdit || entry.fixed, note,
+      onChange: (t) => setEntry(prev => ({ ...prev, type: t })),
+    };
+    entryKey = isEdit ? `edit-${entry.run.id}` : `new-${type}`;
+    runEntryProps = {
+      runIndex, initialRun: isEdit ? entry.run : null,
+      header: <TypePicker {...pickerProps} />, pcHeader: <TypePicker {...pickerProps} pc />,
+      onSave: handleSaveRun, onDelete: isEdit ? handleDeleteEntryRun : null, onBack: leaveEntry,
+      boxType: cfg.boxType, boxName: cfg.boxName || "", maxWins: cfg.maxWins, maxLosses: cfg.maxLosses,
+      previousRuns: sameType, isSyncing,
+    };
+  } else if (entry && editingEvent) {
+    const editingRun = entry.mode === "edit-local" ? editingEvent.runs[entry.index] : null;
+    entryKey = editingRun ? `local-${entry.index}` : "local-new";
+    runEntryProps = {
+      runIndex: editingRun ? entry.index + 1 : editingEvent.runs.length + 1,
+      initialRun: editingRun, header: null, pcHeader: null,
+      onSave: handleSaveRun, onDelete: editingRun ? handleDeleteEntryRun : null, onBack: leaveEntry,
+      boxType: editingEvent.boxType, boxName: editingEvent.boxName || "",
+      maxWins: editingEvent.maxWins || 7, maxLosses: editingEvent.maxLosses || 3,
+      previousRuns: editingRun ? editingEvent.runs.filter(r => r !== editingRun) : editingEvent.runs,
+      isSyncing,
+    };
+  }
+
+  const summaryProps = activeEvent && {
+    event: activeEvent, onAddRun: handleSummaryAddRun, onFinish: handleFinishEvent, onBack: handleSummaryBack,
+    onDeleteRun: handleDeleteRunFromEdit, onEditRun: handleSummaryEditRun, isSyncing,
   };
 
   return (
@@ -2190,31 +2558,32 @@ export default function App() {
             <div className="header-title">MTG Arena Tracker</div>
             <div className="header-sub">戦績管理</div>
           </div>
-          {activeEvent && (
-            <div className="status-bar">
-              <div className="dot" />{activeEvent.type} — Run {activeEvent.runs.length}
-            </div>
-          )}
-          {isRestoringEvent
+          {isLoading
             ? <div style={{ color: "#ccc", fontSize: 13, padding: "40px 0", textAlign: "center" }}>読み込み中...</div>
-            : screen === "home" && <HomeScreen onRecord={() => setScreen(activeEvent ? "run" : "record")} onHistory={() => setScreen("history")} onResumeEvent={() => setScreen("summary")} activeEvent={activeEvent} />}
-          {!isRestoringEvent && screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} activeEvent={activeEvent} onResumeEvent={() => setScreen("summary")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
+            : screen === "home" && <HomeScreen runs={runs} openEvents={openEvents} onRecord={() => openRecord()}
+                onOpenEvent={handleOpenEvent} onEditRun={(r) => handleStartEditRun(r, "home")}
+                onStartPeriod={() => setScreen("record")} onHistory={() => setScreen("history")} />}
+          {screen === "record" && <RecordMenuScreen onNewEvent={handleNewEvent} onBack={() => setScreen("home")} eventTypes={eventTypes} onManageTypes={() => setScreen("manage-types")} isSyncing={isSyncing} />}
           {screen === "manage-types" && <EventTypeManagerScreen eventTypes={eventTypes} onSave={handleSaveEventTypes} onBack={() => setScreen("record")} />}
-          {screen === "history" && <HistoryScreen onBack={() => setScreen("home")} onEditEvent={handleEditEvent} />}
-          {screen === "run" && activeEvent && <RunEntryScreen key={editingRunIndex ?? "new"} {...runEntryProps} />}
-          {screen === "summary" && activeEvent && <EventSummaryScreen event={activeEvent} onAddRun={() => setScreen("run")} onFinish={handleFinishEvent} onBack={() => { if (activeEvent.isEditing) { setActiveEvent(null); setScreen("history"); } else setScreen("home"); }} onDeleteRun={handleDeleteRunFromEdit} onEditRun={handleStartEditRun} isSyncing={isSyncing} />}
+          {screen === "history" && <HistoryHub tab={historyTab} setTab={setHistoryTab} runs={runs} monthSel={monthSel} setMonthSel={setMonthSel}
+            onBack={() => setScreen("home")} onEditEvent={handleEditEvent} onEditRun={(r) => handleStartEditRun(r, "history")} />}
+          {screen === "run" && runEntryProps && <RunEntryScreen key={entryKey} {...runEntryProps} />}
+          {screen === "summary" && summaryProps && <EventSummaryScreen {...summaryProps} />}
           {toast && <div className={`toast ${toast.isError ? "toast-error" : ""}`}>{toast.msg}</div>}
         </div>
       </div>
       {/* PC: ライトテーマ（スマホ時は非表示） */}
       <PCDemo
         screen={screen} setScreen={setScreen} refreshKey={refreshKey}
-        eventTypes={eventTypes} activeEvent={activeEvent}
-        onNewEvent={handleNewEvent} onSaveRun={handleSaveRun}
-        onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
-        onEditRun={handleStartEditRun} runEntryProps={runEntryProps} editingRunIndex={editingRunIndex}
+        eventTypes={eventTypes} runs={runs} openEvents={openEvents} activeEvent={activeEvent}
+        entryKey={entryKey} runEntryProps={runEntryProps}
+        onRecord={() => openRecord()} onOpenEvent={handleOpenEvent}
+        onNewEvent={handleNewEvent} onFinish={handleFinishEvent} onDeleteRun={handleDeleteRunFromEdit}
+        onEditRunIndex={handleSummaryEditRun} onEditRun={(r) => handleStartEditRun(r, screen === "history" ? "history" : "home")}
+        onAddRun={handleSummaryAddRun} onSummaryBack={handleSummaryBack}
         isSyncing={isSyncing} onSaveEventTypes={handleSaveEventTypes}
-        onEditEvent={handleEditEvent} isRestoringEvent={isRestoringEvent}
+        onEditEvent={handleEditEvent} isLoading={isLoading}
+        historyTab={historyTab} setHistoryTab={setHistoryTab} monthSel={monthSel} setMonthSel={setMonthSel}
       />
     </>
   );

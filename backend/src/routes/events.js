@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { createEvent, getEvents, getInProgressEvent, updateEvent, completeEvent, deleteEvent } = require("../db");
+const { createEvent, getEvents, getInProgressEvents, recomputeEventTotals, completeEvent, deleteEvent } = require("../db");
 
 const router = Router();
 
@@ -15,8 +15,8 @@ router.get("/", async (req, res) => {
 // /:id より前に登録する必要あり
 router.get("/in-progress", async (req, res) => {
   try {
-    const event = await getInProgressEvent();
-    res.json(event);
+    // 進行中（期間）イベントは種別ごとに複数ありうるので配列で返す
+    res.json(await getInProgressEvents());
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -35,9 +35,9 @@ router.post("/", async (req, res) => {
 });
 
 router.put("/:id/complete", async (req, res) => {
-  const { totalRuns, totalWins, totalLosses, gemBalance } = req.body;
+  // 集計値はサーバー側でRunから再計算する（bodyの値は使わない）
   try {
-    await completeEvent(req.params.id, { totalRuns, totalWins, totalLosses, gemBalance });
+    await completeEvent(req.params.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -45,9 +45,8 @@ router.put("/:id/complete", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
-  const { totalRuns, totalWins, totalLosses, gemBalance } = req.body;
   try {
-    await updateEvent(req.params.id, { totalRuns, totalWins, totalLosses, gemBalance });
+    await recomputeEventTotals(req.params.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

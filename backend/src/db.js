@@ -140,7 +140,8 @@ async function deleteRun(id) {
 }
 
 const RUN_COLUMNS = `r.id, r.event_id, r.run_index, r.wins, r.losses, r.prize_type, r.prize_gem, r.prize_box_count,
-  r.has_right, r.event_type, r.gem_cost, r.max_wins, r.max_losses, r.played_at`;
+  r.has_right, r.event_type, r.gem_cost, r.max_wins, r.max_losses, r.played_at,
+  ARRAY(SELECT i.id FROM run_images i WHERE i.run_id = r.id ORDER BY i.created_at) AS image_ids`;
 
 async function getRunsByEvent(eventId) {
   const { rows } = await pool.query(
@@ -159,6 +160,30 @@ async function getAllRuns() {
      ORDER BY r.played_at DESC`
   );
   return rows.map(r => ({ ...rowToRun(r), eventName: r.event_name, eventStatus: r.event_status }));
+}
+
+// ===== デッキリスト画像 =====
+// data / thumb はクライアント側で縮小済みのJPEG（base64）
+
+async function addRunImage(runId, { mime, data, thumb }) {
+  const { rows } = await pool.query(
+    `INSERT INTO run_images (run_id, mime, data, thumb)
+     SELECT id, $2, decode($3, 'base64'), decode($4, 'base64') FROM runs WHERE id=$1
+     RETURNING id`,
+    [runId, mime, data, thumb]
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function getRunImage(id, thumb) {
+  const { rows } = await pool.query(
+    `SELECT mime, ${thumb ? "thumb" : "data"} AS bytes FROM run_images WHERE id=$1`, [id]
+  );
+  return rows[0] || null;
+}
+
+async function deleteRunImage(id) {
+  await pool.query("DELETE FROM run_images WHERE id=$1", [id]);
 }
 
 // ===== 変換ヘルパー =====
@@ -197,10 +222,12 @@ function rowToRun(r) {
     maxWins:       r.max_wins,
     maxLosses:     r.max_losses,
     playedAt:      r.played_at,
+    imageIds:      r.image_ids || [],
   };
 }
 
 module.exports = {
   createEvent, getEvents, getInProgressEvents, completeEvent, deleteEvent, recomputeEventTotals,
   createRun, updateRun, getRunsByEvent, getAllRuns, deleteRun,
+  addRunImage, getRunImage, deleteRunImage,
 };

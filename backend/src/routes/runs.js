@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { createRun, updateRun, getRunsByEvent, getAllRuns, deleteRun } = require("../db");
+const { createRun, updateRun, getRunsByEvent, getAllRuns, deleteRun, addRunImage } = require("../db");
 
 const router = Router();
 
@@ -32,6 +32,20 @@ router.post("/", async (req, res) => {
     res.status(201).json(run);
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+// デッキリスト画像の追加（base64のJPEG本体とサムネイル）
+router.post("/:id/images", async (req, res) => {
+  const { mime, data, thumb } = req.body;
+  if (!data || !thumb || !/^image\/(jpeg|png|webp)$/.test(mime || ""))
+    return res.status(400).json({ error: "mime, data, thumb は必須です" });
+  try {
+    const id = await addRunImage(req.params.id, { mime, data, thumb });
+    if (!id) return res.status(404).json({ error: "Runが見つかりません" });
+    res.status(201).json({ id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

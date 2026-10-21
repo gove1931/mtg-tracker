@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext, createContext } from "react";
 
 // ===== 定数 =====
 // VITE_API_URL: Vercelの環境変数に設定（例: https://api.gove.dev）
@@ -192,6 +192,159 @@ async function updateEventInNotion(eventPageId) {
   await fetch(`${API_URL}/api/events/${eventPageId}`, { method: "PUT" });
 }
 
+// ----- デッキリスト画像 -----
+const imageUrl = (id, thumb = false) => `${API_URL}/api/images/${id}${thumb ? "/thumb" : ""}`;
+
+// 画像ファイルを長辺 maxEdge px のJPEGに縮小して base64（ヘッダ無し）で返す
+function resizeImage(file, maxEdge, quality) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("画像を読み込めませんでした")); };
+    img.src = url;
+  });
+}
+
+async function uploadRunImage(runId, file) {
+  // 本体はカード名が読める解像度を残す（スマホのスクショは原寸のまま残るよう長辺2600px）
+  const [data, thumb] = await Promise.all([resizeImage(file, 2600, 0.85), resizeImage(file, 320, 0.7)]);
+  const res = await fetch(`${API_URL}/api/runs/${runId}/images`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mime: "image/jpeg", data, thumb }),
+  });
+  if (!res.ok) throw new Error("画像の保存に失敗しました");
+}
+
+async function deleteRunImageFromDB(id) {
+  const res = await fetch(`${API_URL}/api/images/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("画像の削除に失敗しました");
+}
+
+// Run保存後に画像の追加・削除を反映する
+async function applyImageChanges(runId, images) {
+  if (!images) return;
+  for (const id of images.removed) await deleteRunImageFromDB(id);
+  for (const f of images.added) await uploadRunImage(runId, f);
+}
+
+// 画像の拡大表示（どの画面からでも開けるようにContextで提供）
+const ImageViewerContext = createContext(() => {});
+
+function ImageViewer({ ids, onClose }) {
+  return (
+    <div onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.92)", overflowY: "auto", padding: "56px 12px 24px", WebkitOverflowScrolling: "touch" }}>
+      <button onClick={onClose}
+        style={{ position: "fixed", top: "calc(10px + env(safe-area-inset-top, 0px))", right: 12, zIndex: 1001, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 20, color: "#fff", fontSize: 14, padding: "8px 14px", cursor: "pointer" }}>
+        ✕ 閉じる
+      </button>
+      {ids.map(id => (
+        <img key={id} src={imageUrl(id)} alt="デッキリスト" onClick={e => e.stopPropagation()}
+          style={{ display: "block", maxWidth: "100%", margin: "0 auto 16px", borderRadius: 6 }} />
+      ))}
+    </div>
+  );
+}
+
+// Run一覧の行に出す「📷 N」ボタン（画像が無ければ何も出さない）
+function RunImagesBadge({ r, pc }) {
+  const openViewer = useContext(ImageViewerContext);
+  const ids = r.imageIds || [];
+  if (!ids.length) return null;
+  return (
+    <button onClick={(e) => { e.stopPropagation(); openViewer(ids); }} title="デッキリストを表示"
+      style={pc
+        ? { background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, color: "#2563eb", cursor: "pointer", fontSize: 12, padding: "2px 8px", flexShrink: 0 }
+        : { background: "rgba(126,207,255,0.08)", border: "1px solid rgba(126,207,255,0.3)", borderRadius: 6, color: "#7ecfff", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
+      📷{ids.length > 1 ? ` ${ids.length}` : ""}
+    </button>
+  );
+}
+
+// Run入力画面のデッキリスト画像欄。状態は { kept: 既存id[], removed: id[], added: File[] }
+function DeckImagesField({ images, setImages, disabledNote, pc }) {
+  const openViewer = useContext(ImageViewerContext);
+  const [previews, setPreviews] = useState([]); // added と同じ並びの objectURL
+
+  const addFiles = useCallback((files) => {
+    const imgs = [...files].filter(f => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    setImages(prev => ({ ...prev, added: [...prev.added, ...imgs] }));
+    setPreviews(prev => [...prev, ...imgs.map(f => URL.createObjectURL(f))]);
+  }, [setImages]);
+
+  // PC: Ctrl+V でクリップボードの画像を貼り付け
+  useEffect(() => {
+    if (disabledNote) return;
+    const onPaste = (e) => {
+      const files = [...(e.clipboardData?.items || [])]
+        .filter(it => it.kind === "file" && it.type.startsWith("image/"))
+        .map(it => it.getAsFile()).filter(Boolean);
+      if (files.length) { e.preventDefault(); addFiles(files); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [addFiles, disabledNote]);
+
+  const removeKept = (id) => setImages(prev => ({ ...prev, kept: prev.kept.filter(x => x !== id), removed: [...prev.removed, id] }));
+  const removeAdded = (i) => {
+    URL.revokeObjectURL(previews[i]);
+    setPreviews(prev => prev.filter((_, j) => j !== i));
+    setImages(prev => ({ ...prev, added: prev.added.filter((_, j) => j !== i) }));
+  };
+
+  const thumbBox = { position: "relative", width: 72, height: 72, borderRadius: 8, overflow: "hidden", flexShrink: 0,
+    border: pc ? "1px solid #e2e8f0" : "1px solid rgba(255,255,255,0.12)", background: pc ? "#f8fafc" : "rgba(255,255,255,0.04)" };
+  const imgStyle = { width: "100%", height: "100%", objectFit: "cover", cursor: "pointer", display: "block" };
+  const xBtn = { position: "absolute", top: 2, right: 2, width: 22, height: 22, borderRadius: 11, border: "none",
+    background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 12, lineHeight: "22px", padding: 0, cursor: "pointer" };
+  const hint = { fontSize: 11, color: pc ? "#94a3b8" : "#999", marginTop: 8 };
+
+  return (
+    <div className={pc ? "pcd-form-card" : "card"} style={pc ? { marginBottom: 16 } : undefined}>
+      {pc ? <span className="pcd-form-label">デッキリスト画像</span> : <div className="section-label">デッキリスト画像</div>}
+      {disabledNote ? <div style={hint}>{disabledNote}</div> : (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {images.kept.map(id => (
+              <div key={id} style={thumbBox}>
+                <img src={imageUrl(id, true)} alt="" style={imgStyle} onClick={() => openViewer([id])} />
+                <button style={xBtn} onClick={() => removeKept(id)} aria-label="画像を外す">✕</button>
+              </div>
+            ))}
+            {previews.map((u, i) => (
+              <div key={u} style={thumbBox}>
+                <img src={u} alt="" style={imgStyle} />
+                <button style={xBtn} onClick={() => removeAdded(i)} aria-label="画像を外す">✕</button>
+              </div>
+            ))}
+            <label style={{ ...thumbBox, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer",
+              color: pc ? "#64748b" : "#7ecfff", fontSize: 11, borderStyle: "dashed" }}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>＋</span>画像
+              <input type="file" accept="image/*" multiple hidden
+                onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
+            </label>
+          </div>
+          <div style={hint}>{pc ? "スクリーンショットを Ctrl+V で貼り付けても追加できます。" : "スクリーンショットを選んで追加できます。"}変更は保存ボタンで反映されます。</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 async function deleteRunFromDB(runId) {
   await fetch(`${API_URL}/api/runs/${runId}`, { method: "DELETE" });
 }
@@ -209,9 +362,11 @@ function RunRow({ r, label, onEdit }) {
       <span className="run-num" style={{ width: "auto", minWidth: 28 }}>{label}</span>
       <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
       <span className="run-prize">{runPrizeText(r)}</span>
+      <span style={{ marginLeft: "auto" }} />
+      <RunImagesBadge r={r} />
       {onEdit && (
         <button onClick={() => onEdit(r)}
-          style={{ marginLeft: "auto", background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
+          style={{ background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
           修正
         </button>
       )}
@@ -792,6 +947,8 @@ function HistoryScreen({ onBack, onEditEvent, embedded }) {
                       <span className="run-num">#{i + 1}</span>
                       <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
                       <span className="run-prize">{prize?.icon} {prizeText}</span>
+                      <span style={{ marginLeft: "auto" }} />
+                      <RunImagesBadge r={r} />
                     </div>
                   );
                 })
@@ -877,7 +1034,8 @@ function HistoryScreen({ onBack, onEditEvent, embedded }) {
 }
 
 // ===== RunEntryScreen =====
-function RunEntryScreen({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing }) {
+function RunEntryScreen({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins = 7, maxLosses, previousRuns, isSyncing, imagesDisabledNote }) {
+  const [images, setImages] = useState({ kept: initialRun?.imageIds || [], removed: [], added: [] });
   // initialRun があれば既存Runの修正モード（登録済みの値で初期化）
   const [wins, setWins] = useState(initialRun?.wins ?? null);
   const [losses, setLosses] = useState(initialRun?.losses ?? null);
@@ -1039,6 +1197,7 @@ function RunEntryScreen({ runIndex, header, initialRun, onSave, onDelete, onBack
           </div>
         )}
       </div>
+      <DeckImagesField images={images} setImages={setImages} disabledNote={imagesDisabledNote} />
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn" style={{ flex: 1, padding: "14px", fontSize: 14 }} onClick={onBack}>
           キャンセル
@@ -1046,7 +1205,7 @@ function RunEntryScreen({ runIndex, header, initialRun, onSave, onDelete, onBack
         <button className="btn-primary" style={{ flex: 2 }} disabled={!canSave || isSyncing}
           onClick={() => onSave({ wins, losses, prizeType, prizeGem: Number(prizeGem) || 0, prizeBoxCount,
             hasRight,
-            boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" })}>
+            boxName: (prizeType === "PB_BOX" || prizeType === "CB_BOX") ? boxName : "" }, images)}>
           {isSyncing ? "保存中..." : initialRun ? "修正を保存" : "Runを保存"}
         </button>
       </div>
@@ -1169,8 +1328,10 @@ function EventSummaryScreen({ event, onAddRun, onFinish, onBack, onDeleteRun, on
               <span className="run-num">#{i + 1}</span>
               <span className="run-wins">{r.wins}勝{r.losses != null ? `${r.losses}敗` : ""}</span>
               <span className="run-prize">{prize?.icon} {prizeText}</span>
+              <span style={{ marginLeft: "auto" }} />
+              <RunImagesBadge r={r} />
               <button onClick={() => onEditRun(i)} disabled={isSyncing}
-                style={{ marginLeft: "auto", background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
+                style={{ background: "rgba(255,203,107,0.08)", border: "1px solid rgba(255,203,107,0.3)", borderRadius: 6, color: "#ffcb6b", fontSize: 11, cursor: "pointer", padding: "4px 8px", flexShrink: 0 }}>
                 修正
               </button>
               {event.isEditing && (
@@ -1723,7 +1884,8 @@ function PCEventSummary({ event, onAddRun, onFinish, onBack, onDeleteRun, onEdit
 }
 
 // ===== PCRunEntry =====
-function PCRunEntry({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing }) {
+function PCRunEntry({ runIndex, header, initialRun, onSave, onDelete, onBack, boxType, boxName, maxWins=7, maxLosses, previousRuns, isSyncing, imagesDisabledNote }) {
+  const [images, setImages] = useState({ kept: initialRun?.imageIds || [], removed: [], added: [] });
   const [wins, setWins] = useState(initialRun?.wins ?? null);
   const [losses, setLosses] = useState(initialRun?.losses ?? null);
   const [prizeType, setPrizeType] = useState(initialRun?.prizeType ?? null);
@@ -1841,7 +2003,7 @@ function PCRunEntry({ runIndex, header, initialRun, onSave, onDelete, onBack, bo
           <div style={{height:1,background:"#e2e8f0",margin:"20px 0"}} />
           <button className="pcd-primary-btn" disabled={!canSave || isSyncing}
             onClick={()=>onSave({wins,losses,prizeType,prizeGem:Number(prizeGem)||0,prizeBoxCount,hasRight,
-              boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""})}>
+              boxName:(prizeType==="PB_BOX"||prizeType==="CB_BOX")?boxName:""}, images)}>
             {isSyncing ? "保存中..." : initialRun ? "修正を保存" : "Runを保存"}
           </button>
           {onDelete && (
@@ -1872,6 +2034,9 @@ function PCRunEntry({ runIndex, header, initialRun, onSave, onDelete, onBack, bo
             <div className="pcd-form-hint">これが最初のRunです。</div>
           )}
         </div>
+      </div>
+      <div style={{marginTop:16}}>
+        <DeckImagesField images={images} setImages={setImages} disabledNote={imagesDisabledNote} pc />
       </div>
     </div>
   );
@@ -1954,7 +2119,7 @@ function PCEventDetail({ event, runs, runsLoading, onBack, onEdit, onDelete }) {
               <div key={i} className="pcd-table-row" style={{ gridTemplateColumns: "52px 100px 1fr" }}>
                 <span style={{ color: "#94a3b8", fontSize: 12 }}>#{i + 1}</span>
                 <span style={{ fontWeight: 600, fontSize: 13 }}>{r.wins}勝{r.losses != null ? ` ${r.losses}敗` : ""}</span>
-                <span style={{ color: "#475569", fontSize: 13 }}>{prize?.icon} {prizeText}</span>
+                <span style={{ color: "#475569", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>{prize?.icon} {prizeText}<RunImagesBadge r={r} pc /></span>
               </div>
             );
           })}
@@ -1977,7 +2142,7 @@ function PCRunTable({ runs, labelOf, onEditRun }) {
           <div key={r.id} className="pcd-table-row" style={{ gridTemplateColumns: "150px 90px 1fr 100px 56px" }}>
             <span style={{ color: "#64748b", fontSize: 12 }}>{labelOf(r)}</span>
             <span style={{ fontWeight: 600, fontSize: 13 }}>{r.wins}勝 {r.losses}敗</span>
-            <span style={{ color: "#475569", fontSize: 13 }}>{runPrizeText(r)}</span>
+            <span style={{ color: "#475569", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>{runPrizeText(r)}<RunImagesBadge r={r} pc /></span>
             <span className={`pcd-ev-balance ${bal >= 0 ? "pos" : "neg"}`} style={{ textAlign: "right" }}>{fmtSigned(bal)} G</span>
             <button onClick={() => onEditRun(r)} style={{ background: "none", border: "1px solid #fcd34d", borderRadius: 6, color: "#d97706", cursor: "pointer", fontSize: 12, padding: "2px 8px" }}>修正</button>
           </div>
@@ -2276,6 +2441,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [viewerIds, setViewerIds] = useState(null); // 拡大表示中の画像id
   // 画面遷移のたびにRun入力状態を解除（ナビ経由で離れた場合も含む）。Run入力へ入る時は遷移後に再設定する
   const setScreen = useCallback((next) => { setEntry(null); setScreenRaw(next); }, []);
 
@@ -2437,17 +2603,35 @@ export default function App() {
     setScreen(back);
   };
 
-  const handleSaveRun = async (runData) => {
+  const handleSaveRun = async (runData, images) => {
     if (!entry) return;
+    const hasImageChanges = images && (images.added.length || images.removed.length);
     if (entry.mode === "add-local") {
       setEditingEvent(prev => ({ ...prev, runs: [...prev.runs, runData] }));
       leaveEntry();
       return;
     }
     if (entry.mode === "edit-local") {
+      // 画像は成績とは独立しているので、イベントの一括保存を待たずにすぐ反映する
+      const target = editingEvent.runs[entry.index];
+      let imageIds = target.imageIds;
+      if (hasImageChanges && target.id) {
+        setIsSyncing(true);
+        try {
+          await applyImageChanges(target.id, images);
+          const fresh = await fetchAllRuns();
+          setRuns(fresh);
+          imageIds = fresh.find(r => r.id === target.id)?.imageIds ?? imageIds;
+        } catch {
+          showToast("画像の保存に失敗しました。再度お試しください。", true);
+          return;
+        } finally {
+          setIsSyncing(false);
+        }
+      }
       setEditingEvent(prev => ({
         ...prev,
-        runs: prev.runs.map((r, i) => i === entry.index ? { ...r, ...runData, ...(r.id ? { isModified: true } : {}) } : r),
+        runs: prev.runs.map((r, i) => i === entry.index ? { ...r, ...runData, imageIds, ...(r.id ? { isModified: true } : {}) } : r),
       }));
       leaveEntry();
       return;
@@ -2458,9 +2642,16 @@ export default function App() {
         const res = await createRunInDB(runData, typeCfg(entry.type));
         setLastType(entry.type);
         try { localStorage.setItem("mtg-lastRunType", entry.type); } catch { /* 保存できなくても動作に影響なし */ }
-        showToast(res.eventId ? "✓ Runを保存しました（期間イベントに追加）" : "✓ Runを保存しました");
+        try {
+          await applyImageChanges(res.id, images);
+          showToast(res.eventId ? "✓ Runを保存しました（期間イベントに追加）" : "✓ Runを保存しました");
+        } catch {
+          // Run自体は保存済み。画像だけ失敗した場合は「修正」から付け直せる
+          showToast("Runは保存しましたが、画像の保存に失敗しました。「修正」から追加し直してください。", true);
+        }
       } else {
         await updateRunInDB(entry.run.id, runData);
+        await applyImageChanges(entry.run.id, images);
         showToast("✓ Runを修正しました");
       }
       await reload();
@@ -2539,6 +2730,7 @@ export default function App() {
       maxWins: editingEvent.maxWins || 7, maxLosses: editingEvent.maxLosses || 3,
       previousRuns: editingRun ? editingEvent.runs.filter(r => r !== editingRun) : editingEvent.runs,
       isSyncing,
+      imagesDisabledNote: editingRun?.id ? null : "画像はイベントを保存したあと、履歴（月別）の「修正」から追加できます。",
     };
   }
 
@@ -2548,7 +2740,7 @@ export default function App() {
   };
 
   return (
-    <>
+    <ImageViewerContext.Provider value={setViewerIds}>
       <style>{styles}</style>
       {/* スマホ: 既存のダークテーマ（PC時は非表示） */}
       <div className="mobile-app">
@@ -2585,6 +2777,7 @@ export default function App() {
         onEditEvent={handleEditEvent} isLoading={isLoading}
         historyTab={historyTab} setHistoryTab={setHistoryTab} monthSel={monthSel} setMonthSel={setMonthSel}
       />
-    </>
+      {viewerIds && <ImageViewer ids={viewerIds} onClose={() => setViewerIds(null)} />}
+    </ImageViewerContext.Provider>
   );
 }

@@ -53,13 +53,15 @@ mtg-tracker/
         ├── notion.js    # 旧Notion実装（未使用）
         └── routes/
             ├── events.js  # /api/events（一覧・進行中・作成・完了・削除）
-            └── runs.js    # /api/runs（全件・イベント別・作成・修正・削除）
+            ├── runs.js    # /api/runs（全件・イベント別・作成・修正・削除・画像追加）
+            └── images.js  # /api/images/:id(/thumb)（デッキリスト画像の取得・削除）
 ```
 
 ### データフロー
 
 - Run保存: `POST /api/runs`（`eventType, gemCost, maxWins, maxLosses` + 成績）。同種別の進行中イベントがあれば自動で紐づく。履歴編集から追加する場合は `eventPageId` を渡し、種別・消費ジェムはイベント側から取る。
 - Run修正/削除: `PUT/DELETE /api/runs/:id`。紐づくイベントの集計値（total_runs/wins/losses/gem_balance）はサーバーの `recomputeEventTotals` が毎回再計算する（クライアントは集計値を送らない）。
+- デッキリスト画像: Runごとに複数枚（`run_images` テーブル、bytea でDBに保存。Run削除でCASCADE）。クライアントで長辺2600pxのJPEGと320pxのサムネイルに縮小し、Run保存後に `POST /api/runs/:id/images`（base64、express.json の上限は15mb）。`GET /api/runs` の各Runに `imageIds` が付く。
 - 取得: `GET /api/runs`（全Run）、`GET /api/events/in-progress`（進行中イベントの**配列**）、`GET /api/events`（完了イベント）、`GET /api/runs/:eventId`。
 
 ### 画面遷移（screen state）
